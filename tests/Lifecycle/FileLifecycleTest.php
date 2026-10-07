@@ -32,8 +32,17 @@ class FileLifecycleTest extends IntegrationTestCase
     private function createProject(): int
     {
         $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
-        $project = $this->projectRepo->create('Test', uniqid('test-'), 'active', 1000, 10, $now, $now);
-        return $project->id;
+        $project = new \FileVault\Project\Project(
+            0,
+            uniqid('Test-'),
+            \FileVault\Project\ProjectStatus::ACTIVE,
+            new \FileVault\Project\ProjectQuota(0, 0, 0),
+            new \FileVault\Project\ProjectUsage(0, 0),
+            $now,
+            $now
+        );
+        $saved = $this->projectRepo->save($project);
+        return $saved->id;
     }
 
     public function testCreateSuccess(): void

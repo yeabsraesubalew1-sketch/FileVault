@@ -13,11 +13,23 @@ final class AppTest extends TestCase
 {
     private string $tempPath;
 
+    private array $envBackup = [];
+    private array $serverBackup = [];
+    private array $putenvBackup = [];
+
+    private const ENV_KEYS = ['APP_ENV', 'APP_DEBUG', 'APP_URL', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD', 'STORAGE_ROOT'];
+
     protected function setUp(): void
     {
         $this->tempPath = sys_get_temp_dir() . '/' . uniqid('filevault_app_test_', true);
         mkdir($this->tempPath);
         
+        foreach (self::ENV_KEYS as $key) {
+            $this->putenvBackup[$key] = getenv($key);
+            $this->envBackup[$key] = $_ENV[$key] ?? null;
+            $this->serverBackup[$key] = $_SERVER[$key] ?? null;
+        }
+
         putenv('APP_ENV=testing'); $_ENV['APP_ENV'] = 'testing';
         putenv('APP_DEBUG=true'); $_ENV['APP_DEBUG'] = 'true';
         putenv('APP_URL=https://test.example.com'); $_ENV['APP_URL'] = 'https://test.example.com';
@@ -27,15 +39,26 @@ final class AppTest extends TestCase
     protected function tearDown(): void
     {
         rmdir($this->tempPath);
-        putenv('APP_ENV');
-        putenv('APP_DEBUG');
-        putenv('APP_URL');
-        putenv('DB_HOST');
-        putenv('DB_PORT');
-        putenv('DB_DATABASE');
-        putenv('DB_USERNAME');
-        putenv('DB_PASSWORD');
-        putenv('STORAGE_ROOT');
+        
+        foreach (self::ENV_KEYS as $key) {
+            if ($this->putenvBackup[$key] !== false) {
+                putenv($key . '=' . $this->putenvBackup[$key]);
+            } else {
+                putenv($key);
+            }
+            
+            if ($this->envBackup[$key] !== null) {
+                $_ENV[$key] = $this->envBackup[$key];
+            } else {
+                unset($_ENV[$key]);
+            }
+            
+            if ($this->serverBackup[$key] !== null) {
+                $_SERVER[$key] = $this->serverBackup[$key];
+            } else {
+                unset($_SERVER[$key]);
+            }
+        }
     }
 
     public function testBootstrapReturnsAppWithConfig(): void

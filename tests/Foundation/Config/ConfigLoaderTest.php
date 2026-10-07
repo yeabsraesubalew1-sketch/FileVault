@@ -15,22 +15,25 @@ final class ConfigLoaderTest extends TestCase
 {
     private string $tempEnvPath;
 
+    private array $envBackup = [];
+    private array $serverBackup = [];
+    private array $putenvBackup = [];
+
+    private const ENV_KEYS = ['APP_ENV', 'APP_DEBUG', 'APP_URL', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD'];
+
     protected function setUp(): void
     {
         $this->tempEnvPath = sys_get_temp_dir() . '/' . uniqid('filevault_test_', true);
         mkdir($this->tempEnvPath);
         
-        // Clear env vars that might affect tests
-        putenv('APP_ENV');
-        putenv('APP_DEBUG');
-        putenv('APP_URL');
-        putenv('DB_HOST');
-        putenv('DB_PORT');
-        putenv('DB_DATABASE');
-        putenv('DB_USERNAME');
-        putenv('DB_PASSWORD');
-        unset($_ENV['APP_ENV'], $_ENV['APP_DEBUG'], $_ENV['APP_URL'], $_ENV['DB_HOST'], $_ENV['DB_PORT'], $_ENV['DB_DATABASE'], $_ENV['DB_USERNAME'], $_ENV['DB_PASSWORD']);
-        unset($_SERVER['APP_ENV'], $_SERVER['APP_DEBUG'], $_SERVER['APP_URL'], $_SERVER['DB_HOST'], $_SERVER['DB_PORT'], $_SERVER['DB_DATABASE'], $_SERVER['DB_USERNAME'], $_SERVER['DB_PASSWORD']);
+        foreach (self::ENV_KEYS as $key) {
+            $this->putenvBackup[$key] = getenv($key);
+            $this->envBackup[$key] = $_ENV[$key] ?? null;
+            $this->serverBackup[$key] = $_SERVER[$key] ?? null;
+
+            putenv($key);
+            unset($_ENV[$key], $_SERVER[$key]);
+        }
     }
 
     protected function tearDown(): void
@@ -39,16 +42,26 @@ final class ConfigLoaderTest extends TestCase
             unlink($this->tempEnvPath . '/.env');
         }
         rmdir($this->tempEnvPath);
-        putenv('APP_ENV');
-        putenv('APP_DEBUG');
-        putenv('APP_URL');
-        putenv('DB_HOST');
-        putenv('DB_PORT');
-        putenv('DB_DATABASE');
-        putenv('DB_USERNAME');
-        putenv('DB_PASSWORD');
-        unset($_ENV['APP_ENV'], $_ENV['APP_DEBUG'], $_ENV['APP_URL'], $_ENV['DB_HOST'], $_ENV['DB_PORT'], $_ENV['DB_DATABASE'], $_ENV['DB_USERNAME'], $_ENV['DB_PASSWORD']);
-        unset($_SERVER['APP_ENV'], $_SERVER['APP_DEBUG'], $_SERVER['APP_URL'], $_SERVER['DB_HOST'], $_SERVER['DB_PORT'], $_SERVER['DB_DATABASE'], $_SERVER['DB_USERNAME'], $_SERVER['DB_PASSWORD']);
+        
+        foreach (self::ENV_KEYS as $key) {
+            if ($this->putenvBackup[$key] !== false) {
+                putenv($key . '=' . $this->putenvBackup[$key]);
+            } else {
+                putenv($key);
+            }
+            
+            if ($this->envBackup[$key] !== null) {
+                $_ENV[$key] = $this->envBackup[$key];
+            } else {
+                unset($_ENV[$key]);
+            }
+            
+            if ($this->serverBackup[$key] !== null) {
+                $_SERVER[$key] = $this->serverBackup[$key];
+            } else {
+                unset($_SERVER[$key]);
+            }
+        }
     }
 
     private function createEnvFile(string $content): void
