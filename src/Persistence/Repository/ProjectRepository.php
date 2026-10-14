@@ -75,6 +75,33 @@ final class ProjectRepository implements ProjectRepositoryInterface
         }
     }
 
+    /**
+     * @return list<Project>
+     */
+    public function findAll(int $limit = 50, int $offset = 0): array
+    {
+        $limit = max(1, min(100, $limit));
+        $offset = max(0, $offset);
+
+        $sql = "SELECT * FROM projects ORDER BY id ASC LIMIT :limit OFFSET :offset";
+
+        try {
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->bindValue('limit', $limit, \PDO::PARAM_INT);
+            $stmt->bindValue('offset', $offset, \PDO::PARAM_INT);
+            $stmt->execute();
+            $rows = $stmt->fetchAll();
+
+            $results = [];
+            foreach ($rows as $row) {
+                $results[] = $this->mapRecordToDomain($this->mapToRecord($row));
+            }
+            return $results;
+        } catch (\PDOException $e) {
+            throw new QueryException('Failed to list projects.', 0, $e);
+        }
+    }
+
     public function save(Project $project): Project
     {
         if ($project->id === 0) {

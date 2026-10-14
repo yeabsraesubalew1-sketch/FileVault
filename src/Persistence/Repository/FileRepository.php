@@ -177,6 +177,84 @@ final class FileRepository
         }
     }
 
+    public function findByStorageKey(string $storageKey): ?FileRecord
+    {
+        $sql = "SELECT * FROM files WHERE storage_key = :storage_key";
+
+        try {
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute(['storage_key' => $storageKey]);
+            $row = $stmt->fetch();
+
+            if (!$row) {
+                return null;
+            }
+
+            return $this->mapToRecord($row);
+        } catch (\PDOException $e) {
+            throw new QueryException('Failed to find file by storage key.', 0, $e);
+        }
+    }
+
+    /**
+     * @return list<FileRecord>
+     */
+    public function listByProject(int $projectId, ?string $status = 'active', int $limit = 50, int $offset = 0): array
+    {
+        $limit = max(1, min(100, $limit));
+        $offset = max(0, $offset);
+
+        if ($status === null || $status === 'all') {
+            $sql = "SELECT * FROM files WHERE project_id = :project_id ORDER BY id DESC LIMIT :limit OFFSET :offset";
+            $params = [
+                'project_id' => $projectId,
+                'limit' => $limit,
+                'offset' => $offset,
+            ];
+        } else {
+            $sql = "SELECT * FROM files WHERE project_id = :project_id AND status = :status ORDER BY id DESC LIMIT :limit OFFSET :offset";
+            $params = [
+                'project_id' => $projectId,
+                'status' => $status,
+                'limit' => $limit,
+                'offset' => $offset,
+            ];
+        }
+
+        try {
+            $stmt = $this->pdo->prepare($sql);
+            foreach ($params as $key => $val) {
+                $type = is_int($val) ? \PDO::PARAM_INT : \PDO::PARAM_STR;
+                $stmt->bindValue($key, $val, $type);
+            }
+            $stmt->execute();
+            $rows = $stmt->fetchAll();
+
+            return array_map([$this, 'mapToRecord'], $rows);
+        } catch (\PDOException $e) {
+            throw new QueryException('Failed to list files for project.', 0, $e);
+        }
+    }
+
+    public function countByProject(int $projectId, ?string $status = 'active'): int
+    {
+        if ($status === null || $status === 'all') {
+            $sql = "SELECT COUNT(*) FROM files WHERE project_id = :project_id";
+            $params = ['project_id' => $projectId];
+        } else {
+            $sql = "SELECT COUNT(*) FROM files WHERE project_id = :project_id AND status = :status";
+            $params = ['project_id' => $projectId, 'status' => $status];
+        }
+
+        try {
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute($params);
+            return (int) $stmt->fetchColumn();
+        } catch (\PDOException $e) {
+            throw new QueryException('Failed to count files for project.', 0, $e);
+        }
+    }
+
     /**
      * @param array<string, mixed> $row
      */

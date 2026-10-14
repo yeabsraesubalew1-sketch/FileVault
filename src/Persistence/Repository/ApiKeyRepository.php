@@ -87,6 +87,24 @@ final class ApiKeyRepository implements ApiKeyRepositoryInterface
         }
     }
 
+    /**
+     * @return list<ApiKeyRecord>
+     */
+    public function findByProject(int $projectId): array
+    {
+        $sql = "SELECT * FROM api_keys WHERE project_id = :project_id ORDER BY id ASC";
+
+        try {
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute(['project_id' => $projectId]);
+            $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            return array_map([$this, 'mapToRecord'], $rows);
+        } catch (\PDOException $e) {
+            throw new QueryException('Failed to list API keys for project.', 0, $e);
+        }
+    }
+
     public function revoke(int $id, \DateTimeImmutable $revokedAt): void
     {
         $sql = "UPDATE api_keys SET status = :status, revoked_at = :revoked_at WHERE id = :id AND status = :active_status";

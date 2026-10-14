@@ -153,7 +153,8 @@ final class LocalFilesystemStorage implements StorageBackend
             if (file_exists($activePath)) {
                 throw new StorageConflictException('Storage conflict: object already exists at destination');
             }
-            throw new StorageOperationException('Failed to restore object');
+            $err = error_get_last();
+            throw new StorageOperationException('Failed to restore object: ' . ($err['message'] ?? 'unknown error'));
         }
     }
 

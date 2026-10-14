@@ -235,6 +235,9 @@ class ApiKeyRecordTest extends TestCase
 
     public function testRecordIsImmutable(): void
     {
+        $reflection = new \ReflectionClass(ApiKeyRecord::class);
+        $this->assertTrue($reflection->isReadOnly());
+
         $record = new ApiKeyRecord(
             id: 1,
             publicId: $this->publicId,
@@ -247,7 +250,8 @@ class ApiKeyRecordTest extends TestCase
 
         $this->expectException(\Error::class);
         
-        // This will trigger a readonly property modification error
-        $record->id = 2;
+        // Dynamic access triggers runtime readonly Error without static analyzer/IDE complaints
+        $property = 'id';
+        $record->$property = 2;
     }
 }
