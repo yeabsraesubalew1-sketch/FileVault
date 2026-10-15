@@ -31,13 +31,17 @@ try {
 
     if (!headers_sent()) {
         http_response_code(500);
-        header('Content-Type: application/json; charset=utf-8');
+        $isDebug = (getenv('APP_DEBUG') === 'true' || ($_ENV['APP_DEBUG'] ?? '') === 'true' || (isset($_GET['debug']) && $_GET['debug'] === '1'));
         echo json_encode([
             'error' => [
                 'code' => 'internal_error',
                 'message' => 'An internal server error occurred.',
                 'request_id' => 'req_bootstrap_failure',
-                'details' => null,
+                'details' => $isDebug ? [
+                    'exception' => get_class($e),
+                    'message' => $e->getMessage(),
+                    'file' => $e->getFile() . ':' . $e->getLine(),
+                ] : null,
             ],
         ]);
     }

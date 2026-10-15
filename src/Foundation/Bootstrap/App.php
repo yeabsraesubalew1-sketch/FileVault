@@ -117,8 +117,8 @@ final class App
 
     private static function checkRuntimeRequirements(): void
     {
-        if (PHP_VERSION_ID < 80400 || PHP_VERSION_ID >= 80500) {
-            throw BootstrapException::phpVersionNotSupported('~8.4.0', PHP_VERSION);
+        if (PHP_VERSION_ID < 80200 || PHP_VERSION_ID >= 80600) {
+            throw BootstrapException::phpVersionNotSupported('>=8.2.0', PHP_VERSION);
         }
 
         $requiredExtensions = ['mbstring', 'json'];
