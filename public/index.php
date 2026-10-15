@@ -29,6 +29,11 @@ try {
 } catch (\Throwable $e) {
     error_log('FileVault Unhandled Failure: ' . $e->getMessage());
 
+    if (php_sapi_name() === 'cli') {
+        fwrite(STDERR, "FileVault Bootstrap Failure: " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine() . "\n");
+        exit(1);
+    }
+
     if (!headers_sent()) {
         http_response_code(500);
         $isDebug = (getenv('APP_DEBUG') === 'true' || ($_ENV['APP_DEBUG'] ?? '') === 'true' || (isset($_GET['debug']) && $_GET['debug'] === '1'));
@@ -42,8 +47,9 @@ try {
                     'message' => $e->getMessage(),
                     'file' => $e->getFile() . ':' . $e->getLine(),
                 ] : null,
+                'hint' => $isDebug ? null : 'Append ?debug=1 to the URL or set APP_DEBUG=true in .env to view diagnostic details.',
             ],
-        ]);
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
     exit(1);
