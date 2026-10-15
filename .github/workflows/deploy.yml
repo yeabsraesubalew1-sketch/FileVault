@@ -26,6 +26,7 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           protocol: ftps
           port: 21
+          security: loose
           # Target folder on Bluehost (leave as / if the FTP account is already locked to the project folder)
           server-dir: /
           exclude: |
