@@ -19,10 +19,11 @@ interface StorageBackend
     /**
      * @param int $projectId
      * @param string $storageKey
+     * @param bool $fromTrash
      * @return resource
      * @throws StorageException
      */
-    public function openRead(int $projectId, string $storageKey);
+    public function openRead(int $projectId, string $storageKey, bool $fromTrash = false);
 
     /**
      * @param int $projectId

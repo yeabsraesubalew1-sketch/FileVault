@@ -122,8 +122,8 @@ Fetches metadata for a single file by ID.
 
 ---
 
-### 3.4 Delete File (Soft Delete)
-Moves the file to the project's trash folder and immediately reclaims the file's storage quota for the project.
+### 3.4 Soft Delete File (Move to Trash)
+Moves the file to the project's trash folder and immediately reclaims the file's storage quota for the project. Trashed files cannot be accessed via public `/files/*` URLs.
 
 * **Method**: `DELETE`
 * **Path**: `/api/v1/files/{id}`
@@ -132,15 +132,92 @@ Moves the file to the project's trash folder and immediately reclaims the file's
 #### Success Response (`200 OK`):
 ```json
 {
-  "success": true,
-  "message": "File deleted successfully"
+  "status": "trashed",
+  "file_id": 142
 }
 ```
 
 ---
 
-### 3.5 Public Delivery (No API Key Required)
-Public file streaming is served directly using the file's `storage_key`.
+### 3.5 List Trashed Files
+Returns a paginated list of trashed files for the authenticated project.
+
+* **Method**: `GET`
+* **Path**: `/api/v1/files/trash`
+* **Headers**: `X-Api-Key: <key>`
+* **Query Parameters**:
+  * `limit` *(optional, integer, default: 50, max: 100)*
+  * `offset` *(optional, integer, default: 0)*
+
+#### Success Response (`200 OK`):
+```json
+{
+  "files": [
+    {
+      "id": 142,
+      "project_id": 1,
+      "original_name": "quarterly_earnings.xlsx",
+      "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "size_bytes": 1048576,
+      "storage_key": "2026/10/f1ab51a6ca...",
+      "status": "trashed",
+      "trashed_at": "2026-10-15T22:30:00Z"
+    }
+  ],
+  "total": 1,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+---
+
+### 3.6 Restore File from Trash
+Restores a trashed file back to active storage, restoring its public URL (if public) and re-allocating quota.
+
+* **Method**: `POST`
+* **Path**: `/api/v1/files/{id}/restore` *(Alias: `/api/v1/files/trash/{id}/restore`)*
+* **Headers**: `X-Api-Key: <key>`
+
+#### Success Response (`200 OK`):
+```json
+{
+  "status": "restored",
+  "file_id": 142
+}
+```
+
+---
+
+### 3.7 Permanently Purge File
+Permanently deletes the file payload from physical disk and database.
+
+* **Method**: `DELETE`
+* **Path**: `/api/v1/files/{id}/purge` *(Alias: `/api/v1/files/trash/{id}`)*
+* **Headers**: `X-Api-Key: <key>`
+
+#### Success Response (`200 OK`):
+```json
+{
+  "status": "purged",
+  "file_id": 142
+}
+```
+
+---
+
+### 3.8 Authenticated Download (For Private & Trashed Files)
+Streams and downloads any file belonging to the project—even if the file is marked `visibility: private` or is currently in `status: trashed`.
+
+* **Method**: `GET`
+* **Path**: `/api/v1/files/{id}/download` *(Alias: `/api/v1/files/trash/{id}/download`)*
+* **Headers**: `X-Api-Key: <key>`
+* **Response**: Binary file stream with `Content-Disposition: attachment; filename="..."`
+
+---
+
+### 3.9 Public Delivery (Public Active Files Only)
+Public file delivery is available only for files where `status === "active"` AND `visibility === "public"`. Trashed or private files return `404 Not Found`.
 
 * **Inline View / Image Rendering**:
   ```
@@ -156,7 +233,7 @@ Public file streaming is served directly using the file's `storage_key`.
 
 ---
 
-### 3.6 System Health Check
+### 3.10 System Health Check
 * **Method**: `GET`
 * **Path**: `/api/v1/health`
 * **Headers**: None required

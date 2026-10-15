@@ -125,6 +125,7 @@ final class Kernel
             $this->app->getFileLifecycle(),
             $this->app->getFileRepository(),
             $this->app->getProjectRepository(),
+            $this->app->getStorageBackend(),
             $appUrl
         );
 
@@ -167,11 +168,19 @@ final class Kernel
         // Authenticated File Operations (M02, M07)
         $this->router->post('/api/v1/files', [$fileController, 'upload'], true);
         $this->router->get('/api/v1/files', [$fileController, 'list'], true);
+        $this->router->get('/api/v1/files/trash', [$fileController, 'listTrash'], true);
         $this->router->get('/api/v1/files/{id}', [$fileController, 'get'], true);
+        $this->router->get('/api/v1/files/{id}/download', [$fileController, 'download'], true);
         $this->router->delete('/api/v1/files/{id}', [$fileController, 'delete'], true);
         $this->router->post('/api/v1/files/{id}/replace', [$fileController, 'replace'], true);
         $this->router->post('/api/v1/files/{id}/restore', [$fileController, 'restore'], true);
         $this->router->delete('/api/v1/files/{id}/purge', [$fileController, 'purge'], true);
+
+        // Convenient Trash Aliases
+        $this->router->get('/api/v1/files/trash/{id}/download', [$fileController, 'download'], true);
+        $this->router->post('/api/v1/files/trash/{id}/restore', [$fileController, 'restore'], true);
+        $this->router->delete('/api/v1/files/trash/{id}', [$fileController, 'purge'], true);
+        $this->router->delete('/api/v1/files/trash/{id}/purge', [$fileController, 'purge'], true);
 
         // Admin Interface (M09)
         $adminController = new AdminController($this->app);

@@ -144,31 +144,53 @@ if ($action === 'download') {
         exit;
     }
 
-    $res = callFileVault($apiUrl . '/api/v1/files/' . $id, 'GET', [
+    $downloadUrl = $apiUrl . '/api/v1/files/' . $id . '/download';
+    $ch = curl_init($downloadUrl);
+    curl_setopt_array($ch, [
+        CURLOPT_HTTPHEADER => ['X-API-Key: ' . $apiKey],
+        CURLOPT_RETURNTRANSFER => false,
+        CURLOPT_HEADERFUNCTION => function ($ch, $headerLine) {
+            $len = strlen($headerLine);
+            $clean = trim($headerLine);
+            if ($clean === '' || str_starts_with(strtolower($clean), 'http/')) {
+                return $len;
+            }
+            $lower = strtolower($clean);
+            if (
+                str_starts_with($lower, 'content-type:') ||
+                str_starts_with($lower, 'content-disposition:') ||
+                str_starts_with($lower, 'content-length:') ||
+                str_starts_with($lower, 'x-content-type-options:')
+            ) {
+                header($clean);
+            }
+            return $len;
+        },
+    ]);
+    curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($status >= 400) {
+        http_response_code($status);
+    }
+    exit;
+}
+
+if ($action === 'trash') {
+    header('Content-Type: application/json');
+    $res = callFileVault($apiUrl . '/api/v1/files/trash?limit=100', 'GET', [
         'X-API-Key: ' . $apiKey,
         'Accept: application/json',
     ]);
-
-    if ($res['status'] !== 200 || !isset($res['data']['file'])) {
-        http_response_code($res['status']);
-        echo 'File not found.';
-        exit;
+    if (isset($res['data']['files']) && is_array($res['data']['files'])) {
+        foreach ($res['data']['files'] as &$file) {
+            if (!empty($file['storage_key'])) {
+                $file['url'] = $apiUrl . '/files/' . $file['storage_key'];
+            }
+        }
     }
-
-    $file = $res['data']['file'];
-    $fileUrl = $apiUrl . '/files/' . $file['storage_key'] . '?download=1';
-
-    header('Content-Type: ' . ($file['mime_type'] ?: 'application/octet-stream'));
-    header('Content-Length: ' . (string) $file['size_bytes']);
-    header('Content-Disposition: attachment; filename="' . addcslashes($file['original_name'], '"') . '"; filename*=UTF-8\'\'' . rawurlencode($file['original_name']));
-
-    $fp = fopen($fileUrl, 'rb');
-    if ($fp !== false) {
-        fpassthru($fp);
-        fclose($fp);
-    } else {
-        header('Location: ' . $fileUrl);
-    }
+    http_response_code($res['status']);
+    echo json_encode($res['data']);
     exit;
 }
 
@@ -182,6 +204,44 @@ if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $res = callFileVault($apiUrl . '/api/v1/files/' . $id, 'DELETE', [
+        'X-API-Key: ' . $apiKey,
+        'Accept: application/json',
+    ]);
+
+    http_response_code($res['status']);
+    echo json_encode($res['data']);
+    exit;
+}
+
+if ($action === 'restore' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    header('Content-Type: application/json');
+    $id = $_GET['id'] ?? null;
+    if (!$id || !ctype_digit($id)) {
+        http_response_code(400);
+        echo json_encode(['error' => ['message' => 'Invalid file ID.']]);
+        exit;
+    }
+
+    $res = callFileVault($apiUrl . '/api/v1/files/' . $id . '/restore', 'POST', [
+        'X-API-Key: ' . $apiKey,
+        'Accept: application/json',
+    ]);
+
+    http_response_code($res['status']);
+    echo json_encode($res['data']);
+    exit;
+}
+
+if ($action === 'purge' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    header('Content-Type: application/json');
+    $id = $_GET['id'] ?? null;
+    if (!$id || !ctype_digit($id)) {
+        http_response_code(400);
+        echo json_encode(['error' => ['message' => 'Invalid file ID.']]);
+        exit;
+    }
+
+    $res = callFileVault($apiUrl . '/api/v1/files/' . $id . '/purge', 'DELETE', [
         'X-API-Key: ' . $apiKey,
         'Accept: application/json',
     ]);
@@ -935,6 +995,7 @@ if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     <button class="filter-btn active" data-filter="all">All</button>
                     <button class="filter-btn" data-filter="images">Images</button>
                     <button class="filter-btn" data-filter="docs">Docs</button>
+                    <button class="filter-btn" data-filter="trash" style="color: #f43f5e; border-color: rgba(244, 63, 94, 0.3);">Trash</button>
                 </div>
             </div>
 
@@ -1072,7 +1133,8 @@ if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     async function loadFiles() {
         const grid = document.getElementById('filesGrid');
         try {
-            const res = await fetch('?action=files');
+            const endpoint = (currentFilter === 'trash') ? '?action=trash' : '?action=files';
+            const res = await fetch(endpoint);
             const data = await res.json();
 
             if (!res.ok) {
@@ -1099,12 +1161,13 @@ if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (filtered.length === 0) {
+            const emptyMsg = currentFilter === 'trash' ? 'Trash is empty.' : 'No files found in this category.';
             grid.innerHTML = `
                 <div class="empty-state">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"/>
                     </svg>
-                    <p>No files found in this category.</p>
+                    <p>${emptyMsg}</p>
                 </div>
             `;
             return;
@@ -1112,6 +1175,7 @@ if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
         filtered.forEach(file => {
             const isImage = file.mime_type.startsWith('image/');
+            const isTrashed = file.status === 'trashed';
             const card = document.createElement('div');
             card.className = 'file-card';
 
@@ -1123,9 +1187,40 @@ if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 fileUrl = API_URL + '/files/' + file.storage_key;
             }
 
-            const previewHtml = isImage 
+            const previewHtml = (isImage && !isTrashed)
                 ? `<img src="${fileUrl}" alt="${file.original_name}" loading="lazy" onclick="openModal('${fileUrl}')">`
                 : getDocumentPreviewHtml(file);
+
+            const badgeHtml = isTrashed
+                ? `<span class="type-badge" style="color: #f43f5e; background: rgba(244,63,94,0.15); border-color: rgba(244,63,94,0.3);">TRASHED</span>`
+                : formatTypeBadge(file);
+
+            const actionsHtml = isTrashed ? `
+                <a href="?action=download&id=${file.id}" class="btn-action" title="Download trashed file" download="${file.original_name}">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                    <span>Download</span>
+                </a>
+                <button class="btn-action" onclick="restoreFile(${file.id})" style="color: #34d399;" title="Restore to active">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                    <span>Restore</span>
+                </button>
+                <button class="btn-action btn-delete" onclick="purgeFile(${file.id})" title="Permanently delete from storage">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                    <span>Purge</span>
+                </button>
+            ` : `
+                <a href="?action=download&id=${file.id}" class="btn-action" title="Download file" download="${file.original_name}">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                    <span>Download</span>
+                </a>
+                <button class="btn-action" onclick="copyUrl('${fileUrl}')" title="Copy public URL">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                    <span>Link</span>
+                </button>
+                <button class="btn-action btn-delete" onclick="deleteFile(${file.id})" title="Move to trash">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                </button>
+            `;
 
             card.innerHTML = `
                 <div class="file-preview">
@@ -1135,21 +1230,11 @@ if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="file-name" title="${file.original_name}">${file.original_name}</div>
                     <div class="file-meta">
                         <span>${formatBytes(file.size_bytes)}</span>
-                        <span>${formatTypeBadge(file)}</span>
+                        <span>${badgeHtml}</span>
                     </div>
                 </div>
                 <div class="file-actions">
-                    <a href="?action=download&id=${file.id}" class="btn-action" title="Download file" download="${file.original_name}">
-                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-                        <span>Download</span>
-                    </a>
-                    <button class="btn-action" onclick="copyUrl('${fileUrl}')" title="Copy public URL">
-                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
-                        <span>Link</span>
-                    </button>
-                    <button class="btn-action btn-delete" onclick="deleteFile(${file.id})" title="Delete file">
-                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                    </button>
+                    ${actionsHtml}
                 </div>
             `;
             grid.appendChild(card);
@@ -1170,13 +1255,13 @@ if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     async function deleteFile(id) {
-        if (!confirm('Are you sure you want to delete this file?')) return;
+        if (!confirm('Move this file to trash?')) return;
 
         try {
             const res = await fetch(`?action=delete&id=${id}`, { method: 'POST' });
             const data = await res.json();
             if (res.ok) {
-                showToast('File deleted successfully.');
+                showToast('File moved to trash.');
                 loadFiles();
                 checkStatus();
             } else {
@@ -1184,6 +1269,40 @@ if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } catch (e) {
             showToast('Network error while deleting.', 'error');
+        }
+    }
+
+    async function restoreFile(id) {
+        try {
+            const res = await fetch(`?action=restore&id=${id}`, { method: 'POST' });
+            const data = await res.json();
+            if (res.ok) {
+                showToast('File restored to active storage.');
+                loadFiles();
+                checkStatus();
+            } else {
+                showToast(data.error?.message || 'Restore failed.', 'error');
+            }
+        } catch (e) {
+            showToast('Network error while restoring.', 'error');
+        }
+    }
+
+    async function purgeFile(id) {
+        if (!confirm('Permanently purge this file? This cannot be undone!')) return;
+
+        try {
+            const res = await fetch(`?action=purge&id=${id}`, { method: 'POST' });
+            const data = await res.json();
+            if (res.ok) {
+                showToast('File permanently purged.');
+                loadFiles();
+                checkStatus();
+            } else {
+                showToast(data.error?.message || 'Purge failed.', 'error');
+            }
+        } catch (e) {
+            showToast('Network error while purging.', 'error');
         }
     }
 
@@ -1266,10 +1385,15 @@ if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     // Filter Buttons
     document.querySelectorAll('.filter-btn').forEach(btn => {
         btn.addEventListener('click', () => {
+            const prev = currentFilter;
             document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             currentFilter = btn.dataset.filter;
-            renderFiles();
+            if (currentFilter === 'trash' || prev === 'trash') {
+                loadFiles();
+            } else {
+                renderFiles();
+            }
         });
     });
 

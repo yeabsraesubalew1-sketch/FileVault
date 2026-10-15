@@ -15,6 +15,8 @@ use FileVault\Project\Exception\ProjectNotOperationalException;
 use FileVault\Project\Exception\QuotaExceededException;
 use FileVault\Project\ProjectRepository;
 use FileVault\Project\UsageDelta;
+use FileVault\Storage\Exception\StorageObjectNotFoundException;
+use FileVault\Storage\StorageBackend;
 use InvalidArgumentException;
 
 final class FileController
@@ -23,6 +25,7 @@ final class FileController
         private readonly FileLifecycle $fileLifecycle,
         private readonly FileRepository $fileRepository,
         private readonly ProjectRepository $projectRepository,
+        private readonly StorageBackend $storageBackend,
         private readonly string $appUrl
     ) {}
 
@@ -135,6 +138,29 @@ final class FileController
         ]);
     }
 
+    public function listTrash(Request $request): Response
+    {
+        $project = $request->authenticatedProject;
+        if ($project === null) {
+            return Response::error(new ErrorEnvelope('authentication_required', 'Authentication required.', $request->requestId), 401);
+        }
+
+        $limit = (int) $request->input('limit', 50);
+        $offset = (int) $request->input('offset', 0);
+
+        $files = $this->fileRepository->listByProject($project->id, 'trashed', $limit, $offset);
+        $total = $this->fileRepository->countByProject($project->id, 'trashed');
+
+        $formatted = array_map([$this, 'formatFile'], $files);
+
+        return Response::json([
+            'files' => $formatted,
+            'total' => $total,
+            'limit' => $limit,
+            'offset' => $offset,
+        ]);
+    }
+
     public function get(Request $request, string $id): Response
     {
         $project = $request->authenticatedProject;
@@ -154,6 +180,44 @@ final class FileController
         return Response::json([
             'file' => $this->formatFile($file),
         ]);
+    }
+
+    public function download(Request $request, string $id): Response
+    {
+        $project = $request->authenticatedProject;
+        if ($project === null) {
+            return Response::error(new ErrorEnvelope('authentication_required', 'Authentication required.', $request->requestId), 401);
+        }
+
+        if (!ctype_digit($id)) {
+            return Response::error(new ErrorEnvelope('file_not_found', 'File not found.', $request->requestId), 404);
+        }
+
+        $file = $this->fileRepository->findByProjectAndId($project->id, (int) $id);
+        if ($file === null) {
+            return Response::error(new ErrorEnvelope('file_not_found', 'File not found.', $request->requestId), 404);
+        }
+
+        $fromTrash = ($file->status === 'trashed');
+
+        try {
+            $stream = $this->storageBackend->openRead($file->projectId, $file->storageKey, $fromTrash);
+        } catch (StorageObjectNotFoundException) {
+            return Response::error(new ErrorEnvelope('file_not_found', 'Stored file object is missing from disk.', $request->requestId), 404);
+        } catch (\Throwable) {
+            return Response::error(new ErrorEnvelope('storage_error', 'Failed to retrieve stored file payload.', $request->requestId), 500);
+        }
+
+        $etag = '"' . md5($file->storageKey) . '"';
+
+        return Response::fileStream(
+            streamResource: $stream,
+            sizeBytes: $file->sizeBytes,
+            mimeType: $file->mimeType,
+            filename: $file->originalName,
+            asDownload: true,
+            etag: $etag
+        );
     }
 
     public function delete(Request $request, string $id): Response

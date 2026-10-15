@@ -1,0 +1,40 @@
+name: Deploy FileVault to Bluehost
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch: # Allows manual 1-click trigger from GitHub Actions tab
+
+jobs:
+  deploy:
+    name: Sync Code to Bluehost
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: ⬇️ Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: 🚀 Deploy via FTPS
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          port: 21
+          # Target folder on Bluehost (leave as / if the FTP account is already locked to the project folder)
+          server-dir: /
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/.github/**
+            **/tests/**
+            **/storage/projects/**
+            **/storage/.tmp/**
+            **/.env
+            **/client/.env
+            **/phpunit.xml
+            **/phpunit.result.cache

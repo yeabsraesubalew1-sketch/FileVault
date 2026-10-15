@@ -94,12 +94,14 @@ final class LocalFilesystemStorage implements StorageBackend
         return new StoredObject($storageKey, $sizeBytes);
     }
 
-    public function openRead(int $projectId, string $storageKey)
+    public function openRead(int $projectId, string $storageKey, bool $fromTrash = false)
     {
         $this->validateProjectId($projectId);
         $this->validateStorageKey($storageKey);
         
-        $path = $this->getActivePath($projectId, $storageKey);
+        $path = $fromTrash
+            ? $this->getTrashPath($projectId, $storageKey)
+            : $this->getActivePath($projectId, $storageKey);
         
         $this->ensureValidFile($path);
         

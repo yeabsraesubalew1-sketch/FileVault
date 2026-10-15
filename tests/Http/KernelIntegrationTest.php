@@ -235,19 +235,35 @@ final class KernelIntegrationTest extends IntegrationTestCase
         $delivAfterTrashRes = $this->kernel->handle($delivAfterTrashReq);
         $this->assertSame(404, $delivAfterTrashRes->statusCode);
 
-        // 9. Restore Trashed File
-        $restoreReq = new Request('POST', '/api/v1/files/' . $fileId . '/restore', '/api/v1/files/' . $fileId . '/restore', ['x-api-key' => $this->apiKeyPlaintext], [], [], [], 'req_res');
+        // 8b. Authenticated List Trashed Files -> 200
+        $listTrashReq = new Request('GET', '/api/v1/files/trash', '/api/v1/files/trash', ['x-api-key' => $this->apiKeyPlaintext], [], [], [], 'req_list_trash');
+        $listTrashRes = $this->kernel->handle($listTrashReq);
+        $this->assertSame(200, $listTrashRes->statusCode);
+        $listTrashData = json_decode($listTrashRes->body, true);
+        $this->assertCount(1, $listTrashData['files']);
+        $this->assertSame($fileId, $listTrashData['files'][0]['id']);
+
+        // 8c. Authenticated Download of Trashed File -> 200 with Content
+        $authDownloadReq = new Request('GET', '/api/v1/files/' . $fileId . '/download', '/api/v1/files/' . $fileId . '/download', ['x-api-key' => $this->apiKeyPlaintext], [], [], [], 'req_auth_dl');
+        $authDownloadRes = $this->kernel->handle($authDownloadReq);
+        $this->assertSame(200, $authDownloadRes->statusCode);
+        $this->assertSame('image/png', $authDownloadRes->headers['Content-Type']);
+        $this->assertStringContainsString('attachment', $authDownloadRes->headers['Content-Disposition']);
+        $authDownloadRes->closeStream();
+
+        // 9. Restore Trashed File via trash alias
+        $restoreReq = new Request('POST', '/api/v1/files/trash/' . $fileId . '/restore', '/api/v1/files/trash/' . $fileId . '/restore', ['x-api-key' => $this->apiKeyPlaintext], [], [], [], 'req_res');
         $restoreRes = $this->kernel->handle($restoreReq);
 
         $this->assertSame(200, $restoreRes->statusCode);
         $restoreData = json_decode($restoreRes->body, true);
         $this->assertSame('restored', $restoreData['status']);
 
-        // 10. Purge Restored File -> first trash it, then purge
+        // 10. Purge Restored File -> first trash it, then purge via trash alias
         $reTrashReq = new Request('DELETE', '/api/v1/files/' . $fileId, '/api/v1/files/' . $fileId, ['x-api-key' => $this->apiKeyPlaintext], [], [], [], 'req_del2');
         $this->kernel->handle($reTrashReq);
 
-        $purgeReq = new Request('DELETE', '/api/v1/files/' . $fileId . '/purge', '/api/v1/files/' . $fileId . '/purge', ['x-api-key' => $this->apiKeyPlaintext], [], [], [], 'req_purge');
+        $purgeReq = new Request('DELETE', '/api/v1/files/trash/' . $fileId, '/api/v1/files/trash/' . $fileId, ['x-api-key' => $this->apiKeyPlaintext], [], [], [], 'req_purge');
         $purgeRes = $this->kernel->handle($purgeReq);
 
         $this->assertSame(200, $purgeRes->statusCode);
