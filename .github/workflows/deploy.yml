@@ -3,6 +3,7 @@ name: Deploy FileVault to Bluehost
 on:
   push:
     branches:
+      - feat/v1-production-ready
       - master
   workflow_dispatch: # Allows manual 1-click trigger from GitHub Actions tab
 
