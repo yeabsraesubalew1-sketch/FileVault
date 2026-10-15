@@ -10,6 +10,9 @@
     RewriteRule ^vendor/ - [F,L,NC]
     RewriteRule ^tests/ - [F,L,NC]
 
+    # Exclude client demo folder from public rewrite
+    RewriteRule ^client(/.*)?$ - [L]
+
     # Route all incoming requests into the public/ directory
     RewriteRule ^$ public/ [L]
     RewriteRule (.*) public/$1 [L]

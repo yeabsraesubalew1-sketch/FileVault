@@ -63,4 +63,39 @@ final class RouterTest extends TestCase
         $match = $router->match('GET', '/unknown');
         $this->assertNull($match);
     }
+
+    public function testNormalizePathStripsSubdirectoryAndCleansSlashes(): void
+    {
+        $origAppUrl = getenv('APP_URL');
+        $origEnv = $_ENV['APP_URL'] ?? null;
+        $origScript = $_SERVER['SCRIPT_NAME'] ?? null;
+
+        try {
+            putenv('APP_URL=https://addisagents.com/website_973c67d0');
+            $_ENV['APP_URL'] = 'https://addisagents.com/website_973c67d0';
+            $_SERVER['SCRIPT_NAME'] = '/website_973c67d0/public/index.php';
+
+            $this->assertSame('/', \FileVault\Http\Request::normalizePath('/website_973c67d0'));
+            $this->assertSame('/', \FileVault\Http\Request::normalizePath('/website_973c67d0/'));
+            $this->assertSame('/admin', \FileVault\Http\Request::normalizePath('/website_973c67d0/admin'));
+            $this->assertSame('/admin', \FileVault\Http\Request::normalizePath('/website_973c67d0/admin/'));
+            $this->assertSame('/api/v1/files', \FileVault\Http\Request::normalizePath('/website_973c67d0/api/v1/files'));
+        } finally {
+            if ($origAppUrl !== false) {
+                putenv("APP_URL={$origAppUrl}");
+            } else {
+                putenv('APP_URL');
+            }
+            if ($origEnv !== null) {
+                $_ENV['APP_URL'] = $origEnv;
+            } else {
+                unset($_ENV['APP_URL']);
+            }
+            if ($origScript !== null) {
+                $_SERVER['SCRIPT_NAME'] = $origScript;
+            } else {
+                unset($_SERVER['SCRIPT_NAME']);
+            }
+        }
+    }
 }

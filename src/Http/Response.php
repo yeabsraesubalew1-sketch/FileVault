@@ -63,6 +63,17 @@ final class Response
 
     public static function redirect(string $url, int $status = 302, array $headers = []): self
     {
+        // If redirect is an internal absolute path (e.g. /admin), prefix with base path if configured
+        if (str_starts_with($url, '/') && !str_starts_with($url, '//')) {
+            $appUrl = getenv('APP_URL') ?: ($_ENV['APP_URL'] ?? '');
+            if ($appUrl !== '') {
+                $basePrefix = rtrim((string) parse_url($appUrl, PHP_URL_PATH), '/');
+                if ($basePrefix !== '' && !str_starts_with($url, $basePrefix . '/') && $url !== $basePrefix) {
+                    $url = $basePrefix . $url;
+                }
+            }
+        }
+
         $headers['Location'] = $url;
         return new self($status, $headers, '');
     }

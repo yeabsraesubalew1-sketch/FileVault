@@ -34,6 +34,7 @@ final class Request
         $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
         $uri = $_SERVER['REQUEST_URI'] ?? '/';
         $path = parse_url($uri, PHP_URL_PATH) ?? '/';
+        $path = self::normalizePath($path);
 
         $headers = [];
         foreach ($_SERVER as $key => $value) {
@@ -117,5 +118,45 @@ final class Request
     public function input(string $key, mixed $default = null): mixed
     {
         return $this->parsedBody[$key] ?? $this->queryParams[$key] ?? $default;
+    }
+
+    public static function normalizePath(string $rawPath): string
+    {
+        $path = $rawPath;
+
+        // 1. Strip base prefix from APP_URL if configured with a subpath
+        $appUrl = getenv('APP_URL') ?: ($_ENV['APP_URL'] ?? '');
+        if ($appUrl !== '') {
+            $parsedPath = parse_url($appUrl, PHP_URL_PATH);
+            if (is_string($parsedPath)) {
+                $basePrefix = rtrim($parsedPath, '/');
+                if ($basePrefix !== '' && str_starts_with($path, $basePrefix)) {
+                    $path = substr($path, strlen($basePrefix));
+                }
+            }
+        }
+
+        // 2. Strip base prefix from SCRIPT_NAME if hosted in a subfolder (e.g. /website_973c67d0/public/index.php)
+        $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
+        if ($scriptName !== '') {
+            $scriptDir = rtrim(str_replace('\\', '/', dirname($scriptName)), '/');
+            $candidates = [
+                $scriptDir,
+                preg_replace('#/public$#', '', $scriptDir),
+            ];
+            foreach ($candidates as $prefix) {
+                if ($prefix !== null && $prefix !== '' && $prefix !== '/' && str_starts_with($path, $prefix)) {
+                    $path = substr($path, strlen($prefix));
+                    break;
+                }
+            }
+        }
+
+        $normalized = '/' . ltrim($path, '/');
+        if ($normalized !== '/') {
+            $normalized = rtrim($normalized, '/');
+        }
+
+        return $normalized === '' ? '/' : $normalized;
     }
 }

@@ -415,6 +415,39 @@ final class AdminController
         return $bytes . ' B';
     }
 
+    private function getBasePrefix(): string
+    {
+        $appUrl = $this->app->getConfig()->appUrl;
+        $path = parse_url($appUrl, PHP_URL_PATH);
+        if (is_string($path)) {
+            $prefix = rtrim($path, '/');
+            if ($prefix !== '') {
+                return $prefix;
+            }
+        }
+
+        $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
+        if ($scriptName !== '') {
+            $scriptDir = rtrim(str_replace('\\', '/', dirname($scriptName)), '/');
+            $candidates = [
+                $scriptDir,
+                preg_replace('#/public$#', '', $scriptDir),
+            ];
+            foreach ($candidates as $candidate) {
+                if ($candidate !== null && $candidate !== '' && $candidate !== '/') {
+                    return $candidate;
+                }
+            }
+        }
+
+        return '';
+    }
+
+    private function url(string $path): string
+    {
+        return $this->getBasePrefix() . '/' . ltrim($path, '/');
+    }
+
     // --------------------------------------------------------------------------
     // Views Rendering
     // --------------------------------------------------------------------------
@@ -426,6 +459,8 @@ final class AdminController
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
             <span>' . htmlspecialchars($error, ENT_QUOTES, 'UTF-8') . '</span>
         </div>' : '';
+
+        $loginAction = $this->url('/admin/login');
 
         return <<<HTML
 <!DOCTYPE html>
@@ -612,7 +647,7 @@ final class AdminController
 
     {$errorAlert}
 
-    <form method="POST" action="/admin/login">
+    <form method="POST" action="{$loginAction}">
         <input type="hidden" name="csrf_token" value="{$csrfToken}">
 
         <div class="form-group">
@@ -658,6 +693,9 @@ HTML;
         $keysByProject = $data['keysByProject'];
         $csrfToken = $data['csrfToken'];
         $adminUser = htmlspecialchars($data['adminUser'], ENT_QUOTES, 'UTF-8');
+        $logoutUrl = $this->url('/admin/logout');
+        $createProjectAction = $this->url('/admin/projects');
+        $projectApiBase = $this->url('/admin/projects/');
 
         $flashHtml = '';
         if ($data['success']) {
@@ -766,8 +804,9 @@ HTML;
 
                         $actionBtn = '';
                         if ($k->status === ApiKeyStatus::ACTIVE) {
+                            $revokeUrl = $this->url("/admin/keys/{$kId}/revoke");
                             $actionBtn = "
-                            <form method=\"POST\" action=\"/admin/keys/{$kId}/revoke\" style=\"display:inline;\" onsubmit=\"return confirm('Revoke API key \"{$kName}\" immediately? Client applications using this key will be disconnected.');\">
+                            <form method=\"POST\" action=\"{$revokeUrl}\" style=\"display:inline;\" onsubmit=\"return confirm('Revoke API key \"{$kName}\" immediately? Client applications using this key will be disconnected.');\">
                                 <input type=\"hidden\" name=\"csrf_token\" value=\"{$csrfToken}\">
                                 <button type=\"submit\" class=\"btn-revoke\">Revoke</button>
                             </form>";
@@ -788,6 +827,7 @@ HTML;
                     }
                 }
 
+                $statusAction = $this->url("/admin/projects/{$pId}/status");
                 $projectsHtml .= "
                 <div class=\"project-card\" id=\"project-{$pId}\">
                     <div class=\"pc-header\">
@@ -805,7 +845,7 @@ HTML;
                             </span>
                             
                             <!-- Status Switcher Dropdown Form -->
-                            <form method=\"POST\" action=\"/admin/projects/{$pId}/status\" class=\"status-form\">
+                            <form method=\"POST\" action=\"{$statusAction}\" class=\"status-form\">
                                 <input type=\"hidden\" name=\"csrf_token\" value=\"{$csrfToken}\">
                                 <select name=\"status\" onchange=\"this.form.submit()\" class=\"select-status\" title=\"Change project status\">
                                     <option value=\"active\" " . ($statusVal === 'active' ? 'selected' : '') . ">Active</option>
@@ -1637,7 +1677,7 @@ HTML;
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
                 <span>New Project</span>
             </button>
-            <a href="/admin/logout" class="btn-logout">Logout</a>
+            <a href="{$logoutUrl}" class="btn-logout">Logout</a>
         </div>
     </div>
 </header>
@@ -1691,7 +1731,7 @@ HTML;
             <h3>Create New Project</h3>
             <button class="modal-close" onclick="closeModal('createProjectModal')">&times;</button>
         </div>
-        <form method="POST" action="/admin/projects">
+        <form method="POST" action="{$createProjectAction}">
             <input type="hidden" name="csrf_token" value="{$csrfToken}">
 
             <div class="form-row">
@@ -1817,14 +1857,14 @@ HTML;
         document.getElementById('eq_storage').value = maxStorage;
         document.getElementById('eq_file_size').value = maxFileSize;
         document.getElementById('eq_files').value = maxFileCount;
-        document.getElementById('editQuotaForm').action = '/admin/projects/' + projectId + '/quota';
+        document.getElementById('editQuotaForm').action = '{$projectApiBase}' + projectId + '/quota';
         openModal('editQuotaModal');
     }
 
     function openCreateKeyModal(projectId, projectName) {
         document.getElementById('ck_project_name').value = projectName + ' (ID #' + projectId + ')';
         document.getElementById('ck_key_name').value = 'Production Key (' + new Date().toISOString().slice(0, 10) + ')';
-        document.getElementById('createKeyForm').action = '/admin/projects/' + projectId + '/keys';
+        document.getElementById('createKeyForm').action = '{$projectApiBase}' + projectId + '/keys';
         openModal('createKeyModal');
     }
 
