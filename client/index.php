@@ -59,12 +59,15 @@ function callFileVault(string $url, string $method = 'GET', ?array $headers = []
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
     curl_setopt($ch, CURLOPT_TIMEOUT, 15);
 
-    if (!empty($headers)) {
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-    }
-
     if ($body !== null) {
         curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+    } elseif ($method === 'POST' || $method === 'PUT' || $method === 'PATCH') {
+        curl_setopt($ch, CURLOPT_POSTFIELDS, '');
+        $headers[] = 'Content-Length: 0';
+    }
+
+    if (!empty($headers)) {
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
     }
 
     $response = curl_exec($ch);
