@@ -23,7 +23,32 @@ if (file_exists($envFile)) {
     }
 }
 
-$apiUrl = rtrim($config['FILEVAULT_API_URL'] ?? 'http://localhost:8000', '/');
+$rawApiUrl = trim($config['FILEVAULT_API_URL'] ?? '');
+$isLocalhostServer = in_array(explode(':', $_SERVER['HTTP_HOST'] ?? '')[0], ['localhost', '127.0.0.1'], true);
+
+if ($rawApiUrl === '' || ($rawApiUrl === 'http://localhost:8000' && !$isLocalhostServer)) {
+    // 1. Try reading APP_URL from parent .env
+    $parentEnv = dirname(__DIR__) . '/.env';
+    if (file_exists($parentEnv)) {
+        $parentLines = file($parentEnv, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        foreach ($parentLines as $pLine) {
+            $pLine = trim($pLine);
+            if (str_starts_with($pLine, 'APP_URL=')) {
+                $rawApiUrl = trim(substr($pLine, 8), " \t\n\r\0\x0B\"'");
+                break;
+            }
+        }
+    }
+
+    // 2. Auto-detect from current web server host and script path
+    if (($rawApiUrl === '' || $rawApiUrl === 'http://localhost:8000') && !empty($_SERVER['HTTP_HOST'])) {
+        $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $subpath = preg_replace('#/client(/.*)?$#i', '', $_SERVER['REQUEST_URI'] ?? '');
+        $rawApiUrl = $scheme . '://' . $_SERVER['HTTP_HOST'] . rtrim($subpath, '/');
+    }
+}
+
+$apiUrl = rtrim($rawApiUrl ?: 'http://localhost:8000', '/');
 $apiKey = $config['FILEVAULT_API_KEY'] ?? '';
 
 // Helper for sending server-to-server HTTP requests to FileVault API
