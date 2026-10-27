@@ -59,10 +59,23 @@ final class FileValidator
         'application/x-zip-compressed' => ['zip'],
         'application/gzip' => ['gz'],
         'application/x-tar' => ['tar'],
-        // Media
+        // Audio
         'audio/mpeg' => ['mp3'],
+        'audio/mp3' => ['mp3'],
         'audio/wav' => ['wav'],
-        'audio/ogg' => ['ogg'],
+        'audio/x-wav' => ['wav'],
+        'audio/wave' => ['wav'],
+        'audio/ogg' => ['ogg', 'oga'],
+        'audio/opus' => ['opus', 'ogg'],
+        'application/ogg' => ['ogg', 'opus'],
+        'audio/mp4' => ['m4a', 'mp4'],
+        'audio/x-m4a' => ['m4a'],
+        'audio/aac' => ['aac'],
+        'audio/x-aac' => ['aac'],
+        'audio/flac' => ['flac'],
+        'audio/x-flac' => ['flac'],
+        'audio/webm' => ['weba', 'webm'],
+        // Video
         'video/mp4' => ['mp4'],
         'video/webm' => ['webm'],
         'video/quicktime' => ['mov'],
@@ -126,12 +139,34 @@ final class FileValidator
             'rtf' => 'application/rtf',
         ];
 
+        // Audio formats mapping
+        $audioMap = [
+            'mp3' => 'audio/mpeg',
+            'wav' => 'audio/wav',
+            'ogg' => 'audio/ogg',
+            'oga' => 'audio/ogg',
+            'opus' => 'audio/opus',
+            'm4a' => 'audio/mp4',
+            'aac' => 'audio/aac',
+            'flac' => 'audio/flac',
+            'weba' => 'audio/webm',
+        ];
+
+        $audioAllowedMimes = [
+            'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/wave',
+            'audio/ogg', 'audio/opus', 'application/ogg', 'audio/mp4', 'audio/x-m4a',
+            'audio/aac', 'audio/x-aac', 'audio/flac', 'audio/x-flac', 'audio/webm',
+            'video/mp4', 'video/webm', 'application/octet-stream',
+        ];
+
         if (!array_key_exists($mimeToUse, self::ALLOWED_MIME_TYPES)) {
             // Check if finfo detected a container format for an office document
             if (in_array($detectedMime, ['application/zip', 'application/x-zip-compressed', 'application/octet-stream'], true) && isset($openXmlMap[$ext])) {
                 $mimeToUse = $openXmlMap[$ext];
             } elseif (in_array($detectedMime, ['application/x-ole-storage', 'application/vnd.ms-office', 'application/octet-stream', 'application/x-cfb'], true) && isset($legacyOfficeMap[$ext])) {
                 $mimeToUse = $legacyOfficeMap[$ext];
+            } elseif (isset($audioMap[$ext]) && (in_array($detectedMime, $audioAllowedMimes, true) || in_array($mimeToUse, $audioAllowedMimes, true))) {
+                $mimeToUse = $audioMap[$ext];
             } elseif ($detectedMime === 'text/plain' && in_array($ext, ['csv', 'json', 'md', 'xml', 'rtf'], true)) {
                 $mimeToUse = match ($ext) {
                     'csv' => 'text/csv',
@@ -147,6 +182,13 @@ final class FileValidator
         } elseif (in_array($mimeToUse, ['application/zip', 'application/x-zip-compressed'], true) && isset($openXmlMap[$ext])) {
             // When finfo returns generic application/zip for a docx/xlsx/pptx file, map to specific MIME
             $mimeToUse = $openXmlMap[$ext];
+        } elseif ($mimeToUse === 'video/mp4' && $ext === 'm4a') {
+            $mimeToUse = 'audio/mp4';
+        }
+
+        // Canonicalize audio aliases to standard browser-playable types
+        if (isset($audioMap[$ext]) && in_array($mimeToUse, $audioAllowedMimes, true)) {
+            $mimeToUse = $audioMap[$ext];
         }
 
         return [

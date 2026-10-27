@@ -2,13 +2,25 @@
 
 declare(strict_types=1);
 
-// 1. Load client configuration from .env in this directory
-$envFile = __DIR__ . '/.env';
+// 1. Session Management (Never leak keys in client-side code)
+if (session_status() === PHP_SESSION_NONE) {
+    if (!headers_sent()) {
+        session_set_cookie_params([
+            'lifetime' => 0,
+            'path' => '/',
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ]);
+    }
+    session_start();
+}
+
+// 2. Resolve FileVault API URL (Local vs Bluehost/Remote)
 $config = [
-    'FILEVAULT_API_URL' => 'http://localhost:8000',
-    'FILEVAULT_API_KEY' => '',
+    'FILEVAULT_API_URL' => '',
 ];
 
+$envFile = __DIR__ . '/.env';
 if (file_exists($envFile)) {
     $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
     foreach ($lines as $line) {
@@ -27,7 +39,7 @@ $rawApiUrl = trim($config['FILEVAULT_API_URL'] ?? '');
 $isLocalhostServer = in_array(explode(':', $_SERVER['HTTP_HOST'] ?? '')[0], ['localhost', '127.0.0.1'], true);
 
 if ($rawApiUrl === '' || ($rawApiUrl === 'http://localhost:8000' && !$isLocalhostServer)) {
-    // 1. Try reading APP_URL from parent .env
+    // Try reading APP_URL from parent .env
     $parentEnv = dirname(__DIR__) . '/.env';
     if (file_exists($parentEnv)) {
         $parentLines = file($parentEnv, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
@@ -40,7 +52,7 @@ if ($rawApiUrl === '' || ($rawApiUrl === 'http://localhost:8000' && !$isLocalhos
         }
     }
 
-    // 2. Auto-detect from current web server host and script path
+    // Auto-detect from current web server host and script path
     if (($rawApiUrl === '' || $rawApiUrl === 'http://localhost:8000') && !empty($_SERVER['HTTP_HOST'])) {
         $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
         $subpath = preg_replace('#/client(/.*)?$#i', '', $_SERVER['REQUEST_URI'] ?? '');
@@ -49,7 +61,9 @@ if ($rawApiUrl === '' || ($rawApiUrl === 'http://localhost:8000' && !$isLocalhos
 }
 
 $apiUrl = rtrim($rawApiUrl ?: 'http://localhost:8000', '/');
-$apiKey = $config['FILEVAULT_API_KEY'] ?? '';
+
+// Active API Key is strictly stored in server session (never exposed to client browser)
+$apiKey = $_SESSION['fv_client_key'] ?? '';
 
 // Helper for sending server-to-server HTTP requests to FileVault API
 function callFileVault(string $url, string $method = 'GET', ?array $headers = [], $body = null): array
@@ -57,7 +71,7 @@ function callFileVault(string $url, string $method = 'GET', ?array $headers = []
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 20);
 
     if ($body !== null) {
         curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
@@ -71,7 +85,7 @@ function callFileVault(string $url, string $method = 'GET', ?array $headers = []
     }
 
     $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $curlError = curl_error($ch);
     curl_close($ch);
 
@@ -89,13 +103,57 @@ function callFileVault(string $url, string $method = 'GET', ?array $headers = []
     ];
 }
 
-// 2. Handle internal AJAX actions
+// 3. Handle internal AJAX actions
 $action = $_GET['action'] ?? null;
 
+// Connect with Project API Key
+if ($action === 'connect' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    header('Content-Type: application/json; charset=UTF-8');
+    $submittedKey = trim((string) ($_POST['api_key'] ?? ''));
+
+    if ($submittedKey === '') {
+        http_response_code(400);
+        echo json_encode(['connected' => false, 'error' => 'API Key cannot be empty.']);
+        exit;
+    }
+
+    $res = callFileVault($apiUrl . '/api/v1/project', 'GET', [
+        'X-API-Key: ' . $submittedKey,
+        'Accept: application/json',
+    ]);
+
+    if ($res['status'] === 200 && isset($res['data']['project'])) {
+        $_SESSION['fv_client_key'] = $submittedKey;
+        $_SESSION['fv_client_project'] = $res['data']['project'];
+        echo json_encode(['connected' => true, 'project' => $res['data']['project']]);
+    } else {
+        http_response_code(401);
+        $msg = $res['data']['error']['message'] ?? 'Invalid or inactive API Key.';
+        echo json_encode(['connected' => false, 'error' => $msg]);
+    }
+    exit;
+}
+
+// Disconnect from Project
+if ($action === 'disconnect') {
+    unset($_SESSION['fv_client_key'], $_SESSION['fv_client_project']);
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_regenerate_id(true);
+    }
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        header('Content-Type: application/json; charset=UTF-8');
+        echo json_encode(['connected' => false]);
+    } else {
+        header('Location: ?');
+    }
+    exit;
+}
+
+// Project Status Check
 if ($action === 'api_status') {
-    header('Content-Type: application/json');
+    header('Content-Type: application/json; charset=UTF-8');
     if ($apiKey === '') {
-        echo json_encode(['connected' => false, 'error' => 'API Key is empty. Configure client/.env']);
+        echo json_encode(['connected' => false]);
         exit;
     }
 
@@ -104,21 +162,35 @@ if ($action === 'api_status') {
         'Accept: application/json',
     ]);
 
-    if ($res['status'] === 200) {
-        echo json_encode(['connected' => true, 'project' => $res['data']['project'] ?? null]);
+    if ($res['status'] === 200 && isset($res['data']['project'])) {
+        $_SESSION['fv_client_project'] = $res['data']['project'];
+        echo json_encode(['connected' => true, 'project' => $res['data']['project']]);
     } else {
-        $msg = $res['data']['error']['message'] ?? 'Unable to connect to FileVault.';
-        echo json_encode(['connected' => false, 'error' => $msg, 'status' => $res['status']]);
+        unset($_SESSION['fv_client_key'], $_SESSION['fv_client_project']);
+        http_response_code(401);
+        echo json_encode(['connected' => false, 'error' => 'Session expired or API key revoked.']);
     }
     exit;
 }
 
+// Authenticated Actions Guard
+if (in_array($action, ['files', 'trash', 'upload', 'delete', 'restore', 'purge', 'download', 'replace'], true)) {
+    if ($apiKey === '') {
+        header('Content-Type: application/json; charset=UTF-8');
+        http_response_code(401);
+        echo json_encode(['error' => ['message' => 'Please connect with an API Key to continue.']]);
+        exit;
+    }
+}
+
+// Fetch Active Files
 if ($action === 'files') {
-    header('Content-Type: application/json');
+    header('Content-Type: application/json; charset=UTF-8');
     $res = callFileVault($apiUrl . '/api/v1/files?limit=100', 'GET', [
         'X-API-Key: ' . $apiKey,
         'Accept: application/json',
     ]);
+
     if (isset($res['data']['files']) && is_array($res['data']['files'])) {
         foreach ($res['data']['files'] as &$file) {
             if (!empty($file['storage_key'])) {
@@ -131,8 +203,29 @@ if ($action === 'files') {
     exit;
 }
 
+// Fetch Trashed Files
+if ($action === 'trash') {
+    header('Content-Type: application/json; charset=UTF-8');
+    $res = callFileVault($apiUrl . '/api/v1/files/trash?limit=100', 'GET', [
+        'X-API-Key: ' . $apiKey,
+        'Accept: application/json',
+    ]);
+
+    if (isset($res['data']['files']) && is_array($res['data']['files'])) {
+        foreach ($res['data']['files'] as &$file) {
+            if (!empty($file['storage_key'])) {
+                $file['url'] = $apiUrl . '/files/' . $file['storage_key'];
+            }
+        }
+    }
+    http_response_code($res['status']);
+    echo json_encode($res['data']);
+    exit;
+}
+
+// Upload File
 if ($action === 'upload' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    header('Content-Type: application/json');
+    header('Content-Type: application/json; charset=UTF-8');
     if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
         http_response_code(400);
         echo json_encode(['error' => ['message' => 'Please select a valid file to upload.']]);
@@ -164,6 +257,108 @@ if ($action === 'upload' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
+// Replace File Content
+if ($action === 'replace' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    header('Content-Type: application/json; charset=UTF-8');
+    $id = $_GET['id'] ?? null;
+    if (!$id || !ctype_digit($id)) {
+        http_response_code(400);
+        echo json_encode(['error' => ['message' => 'Invalid file ID.']]);
+        exit;
+    }
+
+    if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+        http_response_code(400);
+        echo json_encode(['error' => ['message' => 'Please select a replacement file.']]);
+        exit;
+    }
+
+    $file = $_FILES['file'];
+    $visibility = $_POST['visibility'] ?? 'public';
+    $customName = trim($_POST['name'] ?? '');
+
+    $postData = [
+        'file' => new CURLFile($file['tmp_name'], $file['type'], $file['name']),
+        'visibility' => $visibility,
+    ];
+    if ($customName !== '') {
+        $postData['name'] = $customName;
+    }
+
+    $res = callFileVault($apiUrl . '/api/v1/files/' . $id . '/replace', 'POST', [
+        'X-API-Key: ' . $apiKey,
+    ], $postData);
+
+    if (isset($res['data']['file']['storage_key'])) {
+        $res['data']['file']['url'] = $apiUrl . '/files/' . $res['data']['file']['storage_key'];
+    }
+
+    http_response_code($res['status']);
+    echo json_encode($res['data']);
+    exit;
+}
+
+// Soft Delete (Move to Trash)
+if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    header('Content-Type: application/json; charset=UTF-8');
+    $id = $_GET['id'] ?? null;
+    if (!$id || !ctype_digit($id)) {
+        http_response_code(400);
+        echo json_encode(['error' => ['message' => 'Invalid file ID.']]);
+        exit;
+    }
+
+    $res = callFileVault($apiUrl . '/api/v1/files/' . $id, 'DELETE', [
+        'X-API-Key: ' . $apiKey,
+        'Accept: application/json',
+    ]);
+
+    http_response_code($res['status']);
+    echo json_encode($res['data']);
+    exit;
+}
+
+// Restore from Trash
+if ($action === 'restore' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    header('Content-Type: application/json; charset=UTF-8');
+    $id = $_GET['id'] ?? null;
+    if (!$id || !ctype_digit($id)) {
+        http_response_code(400);
+        echo json_encode(['error' => ['message' => 'Invalid file ID.']]);
+        exit;
+    }
+
+    $res = callFileVault($apiUrl . '/api/v1/files/' . $id . '/restore', 'POST', [
+        'X-API-Key: ' . $apiKey,
+        'Accept: application/json',
+    ]);
+
+    http_response_code($res['status']);
+    echo json_encode($res['data']);
+    exit;
+}
+
+// Permanent Purge
+if ($action === 'purge' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    header('Content-Type: application/json; charset=UTF-8');
+    $id = $_GET['id'] ?? null;
+    if (!$id || !ctype_digit($id)) {
+        http_response_code(400);
+        echo json_encode(['error' => ['message' => 'Invalid file ID.']]);
+        exit;
+    }
+
+    $res = callFileVault($apiUrl . '/api/v1/files/' . $id . '/purge', 'DELETE', [
+        'X-API-Key: ' . $apiKey,
+        'Accept: application/json',
+    ]);
+
+    http_response_code($res['status']);
+    echo json_encode($res['data']);
+    exit;
+}
+
+// Download File (Stream through client)
 if ($action === 'download') {
     $id = $_GET['id'] ?? null;
     if (!$id || !ctype_digit($id)) {
@@ -188,6 +383,7 @@ if ($action === 'download') {
                 str_starts_with($lower, 'content-type:') ||
                 str_starts_with($lower, 'content-disposition:') ||
                 str_starts_with($lower, 'content-length:') ||
+                str_starts_with($lower, 'accept-ranges:') ||
                 str_starts_with($lower, 'x-content-type-options:')
             ) {
                 header($clean);
@@ -196,262 +392,319 @@ if ($action === 'download') {
         },
     ]);
     curl_exec($ch);
-    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-    if ($status >= 400) {
+    if ($status >= 400 && !headers_sent()) {
         http_response_code($status);
+        echo 'Failed to stream requested file.';
     }
     exit;
 }
 
-if ($action === 'trash') {
-    header('Content-Type: application/json');
-    $res = callFileVault($apiUrl . '/api/v1/files/trash?limit=100', 'GET', [
-        'X-API-Key: ' . $apiKey,
-        'Accept: application/json',
-    ]);
-    if (isset($res['data']['files']) && is_array($res['data']['files'])) {
-        foreach ($res['data']['files'] as &$file) {
-            if (!empty($file['storage_key'])) {
-                $file['url'] = $apiUrl . '/files/' . $file['storage_key'];
-            }
-        }
-    }
-    http_response_code($res['status']);
-    echo json_encode($res['data']);
-    exit;
-}
-
-if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    header('Content-Type: application/json');
-    $id = $_GET['id'] ?? null;
-    if (!$id || !ctype_digit($id)) {
-        http_response_code(400);
-        echo json_encode(['error' => ['message' => 'Invalid file ID.']]);
-        exit;
-    }
-
-    $res = callFileVault($apiUrl . '/api/v1/files/' . $id, 'DELETE', [
-        'X-API-Key: ' . $apiKey,
-        'Accept: application/json',
-    ]);
-
-    http_response_code($res['status']);
-    echo json_encode($res['data']);
-    exit;
-}
-
-if ($action === 'restore' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    header('Content-Type: application/json');
-    $id = $_GET['id'] ?? null;
-    if (!$id || !ctype_digit($id)) {
-        http_response_code(400);
-        echo json_encode(['error' => ['message' => 'Invalid file ID.']]);
-        exit;
-    }
-
-    $res = callFileVault($apiUrl . '/api/v1/files/' . $id . '/restore', 'POST', [
-        'X-API-Key: ' . $apiKey,
-        'Accept: application/json',
-    ]);
-
-    http_response_code($res['status']);
-    echo json_encode($res['data']);
-    exit;
-}
-
-if ($action === 'purge' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    header('Content-Type: application/json');
-    $id = $_GET['id'] ?? null;
-    if (!$id || !ctype_digit($id)) {
-        http_response_code(400);
-        echo json_encode(['error' => ['message' => 'Invalid file ID.']]);
-        exit;
-    }
-
-    $res = callFileVault($apiUrl . '/api/v1/files/' . $id . '/purge', 'DELETE', [
-        'X-API-Key: ' . $apiKey,
-        'Accept: application/json',
-    ]);
-
-    http_response_code($res['status']);
-    echo json_encode($res['data']);
-    exit;
-}
-
-// 3. Render Web Interface
+$initialProject = $_SESSION['fv_client_project'] ?? null;
+$isConnected = ($apiKey !== '' && $initialProject !== null);
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FileVault — Explorer & Upload Interface</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <link rel="alternate icon" href="/favicon.ico">
+    <title>FileVault | Project Vault</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="alternate icon" href="favicon.ico">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-base: #090d16;
-            --bg-surface: #101726;
-            --bg-card: rgba(22, 30, 48, 0.7);
-            --bg-card-hover: rgba(30, 41, 64, 0.85);
+            --bg-base: #070a12;
+            --bg-surface: #0e1526;
+            --bg-card: rgba(15, 23, 42, 0.75);
+            --bg-card-hover: rgba(22, 33, 62, 0.85);
             --border: rgba(255, 255, 255, 0.08);
-            --border-focus: rgba(99, 102, 241, 0.5);
+            --border-hover: rgba(99, 102, 241, 0.35);
             --primary: #6366f1;
             --primary-hover: #4f46e5;
             --primary-glow: rgba(99, 102, 241, 0.25);
+            --accent-audio: #a855f7;
+            --accent-audio-glow: rgba(168, 85, 247, 0.25);
             --accent-cyan: #06b6d4;
-            --accent-emerald: #10b981;
-            --accent-rose: #f43f5e;
+            --emerald: #10b981;
+            --emerald-bg: rgba(16, 185, 129, 0.12);
+            --rose: #f43f5e;
+            --rose-bg: rgba(244, 63, 94, 0.12);
             --text-main: #f8fafc;
             --text-muted: #94a3b8;
-            --text-sub: #64748b;
-            --radius-lg: 16px;
-            --radius-md: 10px;
-            --radius-sm: 6px;
-            --shadow-card: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
-            --shadow-glow: 0 0 25px rgba(99, 102, 241, 0.2);
-            --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            --text-dim: #64748b;
         }
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-family: 'Inter', -apple-system, sans-serif;
             background-color: var(--bg-base);
             color: var(--text-main);
             min-height: 100vh;
-            line-height: 1.5;
+            display: flex;
+            flex-direction: column;
             background-image: 
-                radial-gradient(at 15% 15%, rgba(99, 102, 241, 0.12) 0px, transparent 50%),
-                radial-gradient(at 85% 85%, rgba(6, 182, 212, 0.08) 0px, transparent 50%);
+                radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99, 102, 241, 0.18), transparent 70%),
+                radial-gradient(circle at 90% 20%, rgba(168, 85, 247, 0.08), transparent 40%);
             background-attachment: fixed;
         }
 
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 32px 24px;
-        }
-
-        /* Header */
+        /* Top Navbar */
         header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 20px;
-            margin-bottom: 36px;
-            padding-bottom: 24px;
+            background: rgba(14, 21, 38, 0.85);
+            backdrop-filter: blur(20px);
             border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 50;
         }
 
-        .brand {
+        .nav-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 14px 28px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .brand-area {
             display: flex;
             align-items: center;
             gap: 14px;
         }
 
         .brand-icon {
-            width: 44px;
-            height: 44px;
-            border-radius: var(--radius-md);
-            background: linear-gradient(135deg, var(--primary), var(--accent-cyan));
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #6366f1, #a855f7);
+            border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: var(--shadow-glow);
+            box-shadow: 0 4px 15px var(--primary-glow);
         }
 
-        .brand-icon svg {
-            width: 24px;
-            height: 24px;
-            color: #ffffff;
-        }
+        .brand-icon svg { width: 22px; height: 22px; stroke: white; }
 
-        .brand-text h1 {
-            font-family: 'Plus Jakarta Sans', sans-serif;
-            font-size: 24px;
+        .brand-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 20px;
             font-weight: 700;
             letter-spacing: -0.02em;
-            background: linear-gradient(to right, #ffffff, #cbd5e1);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .brand-text p {
-            font-size: 13px;
-            color: var(--text-muted);
-        }
-
-        .status-badge {
-            display: inline-flex;
+            display: flex;
             align-items: center;
             gap: 8px;
-            padding: 8px 16px;
-            border-radius: 9999px;
-            font-size: 13px;
-            font-weight: 500;
-            background: var(--bg-surface);
+        }
+
+        .brand-badge-tag {
+            font-family: 'Inter', sans-serif;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            padding: 3px 8px;
+            border-radius: 6px;
+            background: rgba(99, 102, 241, 0.15);
+            color: #a5b4fc;
+            border: 1px solid rgba(99, 102, 241, 0.3);
+        }
+
+        .nav-controls {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .project-pill {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(255, 255, 255, 0.04);
             border: 1px solid var(--border);
+            border-radius: 30px;
+            padding: 6px 14px;
+            font-size: 13px;
         }
 
         .status-dot {
             width: 8px;
             height: 8px;
             border-radius: 50%;
-            background: var(--text-sub);
+            background: var(--emerald);
+            box-shadow: 0 0 10px var(--emerald);
         }
 
-        .status-dot.online {
-            background: var(--accent-emerald);
-            box-shadow: 0 0 10px var(--accent-emerald);
+        .btn-disconnect {
+            background: transparent;
+            border: 1px solid rgba(244, 63, 94, 0.3);
+            color: #fda4af;
+            font-size: 12.5px;
+            font-weight: 500;
+            padding: 7px 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s ease;
         }
 
-        .status-dot.offline {
-            background: var(--accent-rose);
-            box-shadow: 0 0 10px var(--accent-rose);
+        .btn-disconnect:hover {
+            background: var(--rose-bg);
+            border-color: var(--rose);
+            color: white;
         }
 
-        /* Project Stats Bar */
-        .project-stats-card {
+        /* Container & Main Layout */
+        main {
+            max-width: 1400px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 32px 28px;
+            flex: 1;
+        }
+
+        /* Connect Screen (When Not Authenticated) */
+        .connect-screen {
+            max-width: 500px;
+            margin: 60px auto;
+            background: var(--bg-card);
+            backdrop-filter: blur(24px);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            text-align: center;
+        }
+
+        .connect-icon-wrapper {
+            width: 64px;
+            height: 64px;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(168, 85, 247, 0.2));
+            border: 1px solid rgba(99, 102, 241, 0.4);
+            border-radius: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            box-shadow: 0 10px 25px -5px var(--primary-glow);
+        }
+
+        .connect-icon-wrapper svg { width: 32px; height: 32px; stroke: #a5b4fc; }
+
+        .connect-screen h2 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .connect-screen p {
+            color: var(--text-muted);
+            font-size: 14px;
+            line-height: 1.5;
+            margin-bottom: 28px;
+        }
+
+        .form-connect {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            text-align: left;
+        }
+
+        .form-connect label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
+        .input-key {
+            width: 100%;
+            background: rgba(14, 21, 38, 0.9);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px 16px;
+            color: white;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .input-key:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px var(--primary-glow);
+        }
+
+        .btn-connect-submit {
+            background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 14px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 10px 20px -5px var(--primary-glow);
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-connect-submit:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 14px 25px -4px var(--primary-glow);
+        }
+
+        .connect-hint {
+            margin-top: 24px;
+            font-size: 12px;
+            color: var(--text-dim);
+            line-height: 1.4;
+        }
+
+        /* Quota & Overview Bar */
+        .vault-hero {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 32px;
+        }
+
+        .stat-widget {
             background: var(--bg-card);
             backdrop-filter: blur(16px);
             border: 1px solid var(--border);
-            border-radius: var(--radius-lg);
+            border-radius: 16px;
             padding: 20px 24px;
-            margin-bottom: 32px;
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 20px;
-            box-shadow: var(--shadow-card);
-        }
-
-        .stat-item {
             display: flex;
             flex-direction: column;
-            gap: 4px;
+            justify-content: space-between;
+            transition: border-color 0.2s ease;
         }
 
-        .stat-label {
-            font-size: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: var(--text-sub);
+        .stat-widget:hover { border-color: var(--border-hover); }
+
+        .stat-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: var(--text-muted);
+            font-size: 13px;
+            font-weight: 500;
         }
 
         .stat-value {
-            font-size: 20px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 26px;
             font-weight: 700;
-            font-family: 'Plus Jakarta Sans', sans-serif;
+            margin: 8px 0;
             color: var(--text-main);
         }
 
@@ -459,132 +712,445 @@ if ($action === 'purge' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             width: 100%;
             height: 6px;
             background: rgba(255, 255, 255, 0.08);
-            border-radius: 9999px;
+            border-radius: 4px;
             overflow: hidden;
             margin-top: 6px;
         }
 
-        .progress-bar-fill {
+        .progress-bar {
             height: 100%;
-            background: linear-gradient(90deg, var(--primary), var(--accent-cyan));
-            border-radius: 9999px;
-            width: 0%;
-            transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 4px;
+            background: linear-gradient(90deg, #6366f1, #a855f7);
+            transition: width 0.4s ease;
         }
 
-        /* Main Grid */
-        .main-layout {
+        .stat-sub {
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-top: 6px;
+        }
+
+        /* Controls & Filter Bar */
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .tabs-group {
+            display: flex;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 4px;
+            gap: 4px;
+        }
+
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 13.5px;
+            font-weight: 500;
+            padding: 8px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tab-btn.active {
+            background: var(--bg-surface);
+            color: white;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .tab-btn .badge-count {
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .tab-btn.active .badge-count {
+            background: var(--primary);
+            color: white;
+        }
+
+        .search-and-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+            justify-content: flex-end;
+        }
+
+        .search-box {
+            position: relative;
+            max-width: 300px;
+            width: 100%;
+        }
+
+        .search-box svg {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 16px;
+            height: 16px;
+            stroke: var(--text-dim);
+            pointer-events: none;
+        }
+
+        .search-box input {
+            width: 100%;
+            background: rgba(14, 21, 38, 0.8);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 9px 14px 9px 38px;
+            color: white;
+            font-size: 13.5px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .search-box input:focus { border-color: var(--primary); }
+
+        .type-filters {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-bottom: 24px;
+        }
+
+        .filter-chip {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            border-radius: 20px;
+            padding: 5px 12px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .filter-chip:hover, .filter-chip.active {
+            background: rgba(99, 102, 241, 0.15);
+            border-color: rgba(99, 102, 241, 0.4);
+            color: #c7d2fe;
+        }
+
+        .btn-upload-primary {
+            background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+            color: white;
+            border: none;
+            border-radius: 10px;
+            padding: 9px 18px;
+            font-size: 13.5px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 15px var(--primary-glow);
+            transition: all 0.2s;
+        }
+
+        .btn-upload-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px var(--primary-glow);
+        }
+
+        /* Files Grid */
+        .files-grid {
             display: grid;
-            grid-template-columns: 360px 1fr;
-            gap: 32px;
-            align-items: start;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 20px;
         }
 
-        @media (max-width: 900px) {
-            .main-layout {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        /* Upload Card */
-        .card {
+        .file-card {
             background: var(--bg-card);
             backdrop-filter: blur(16px);
             border: 1px solid var(--border);
-            border-radius: var(--radius-lg);
-            padding: 24px;
-            box-shadow: var(--shadow-card);
+            border-radius: 16px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            transition: all 0.2s ease;
+            position: relative;
         }
 
-        .card-title {
-            font-family: 'Plus Jakarta Sans', sans-serif;
-            font-size: 18px;
-            font-weight: 700;
-            margin-bottom: 18px;
+        .file-card:hover {
+            border-color: var(--border-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.6);
+        }
+
+        /* Card Previews */
+        .card-preview {
+            width: 100%;
+            height: 180px;
+            background: rgba(14, 21, 38, 0.5);
             display: flex;
             align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .card-preview img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            cursor: pointer;
+            transition: transform 0.3s;
+        }
+
+        .card-preview img:hover { transform: scale(1.04); }
+
+        /* Audio Card Special Styling */
+        .audio-preview-box {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, rgba(168, 85, 247, 0.12), rgba(99, 102, 241, 0.15));
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            gap: 12px;
+        }
+
+        .audio-wave-anim {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            height: 32px;
+        }
+
+        .audio-bar {
+            width: 4px;
+            background: var(--accent-audio);
+            border-radius: 2px;
+            animation: soundWave 1.2s ease-in-out infinite alternate;
+        }
+
+        .audio-bar:nth-child(1) { height: 12px; animation-delay: 0.1s; }
+        .audio-bar:nth-child(2) { height: 26px; animation-delay: 0.3s; }
+        .audio-bar:nth-child(3) { height: 32px; animation-delay: 0.2s; }
+        .audio-bar:nth-child(4) { height: 18px; animation-delay: 0.4s; }
+        .audio-bar:nth-child(5) { height: 28px; animation-delay: 0.15s; }
+        .audio-bar:nth-child(6) { height: 14px; animation-delay: 0.25s; }
+
+        @keyframes soundWave {
+            0% { transform: scaleY(0.4); opacity: 0.6; }
+            100% { transform: scaleY(1.1); opacity: 1; }
+        }
+
+        .inline-audio-player {
+            width: 100%;
+            height: 38px;
+            border-radius: 20px;
+            outline: none;
+            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));
+        }
+
+        .generic-file-preview {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            color: var(--text-dim);
+        }
+
+        .generic-file-preview svg { width: 44px; height: 44px; stroke: var(--text-muted); }
+
+        .card-body {
+            padding: 18px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
             justify-content: space-between;
         }
 
+        .file-name-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .file-title {
+            font-size: 14.5px;
+            font-weight: 600;
+            color: var(--text-main);
+            word-break: break-all;
+            line-height: 1.4;
+        }
+
+        .badge-type {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            padding: 3px 8px;
+            border-radius: 6px;
+            white-space: nowrap;
+        }
+
+        .badge-audio { background: rgba(168, 85, 247, 0.15); color: #d8b4fe; border: 1px solid rgba(168, 85, 247, 0.3); }
+        .badge-image { background: rgba(6, 182, 212, 0.15); color: #67e8f9; border: 1px solid rgba(6, 182, 212, 0.3); }
+        .badge-doc { background: rgba(245, 158, 11, 0.15); color: #fde68a; border: 1px solid rgba(245, 158, 11, 0.3); }
+        .badge-trash { background: var(--rose-bg); color: #fda4af; border: 1px solid rgba(244, 63, 94, 0.3); }
+
+        .file-meta-row {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-bottom: 16px;
+        }
+
+        .card-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: auto;
+            border-top: 1px solid var(--border);
+            padding-top: 14px;
+        }
+
+        .btn-card {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            font-size: 12.5px;
+            font-weight: 500;
+            padding: 7px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .btn-card:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: white;
+            border-color: var(--border-hover);
+        }
+
+        .btn-card.danger {
+            color: #fda4af;
+            border-color: rgba(244, 63, 94, 0.3);
+        }
+
+        .btn-card.danger:hover {
+            background: var(--rose-bg);
+            border-color: var(--rose);
+            color: white;
+        }
+
+        .btn-card.success {
+            color: #6ee7b7;
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+
+        .btn-card.success:hover {
+            background: var(--emerald-bg);
+            border-color: var(--emerald);
+            color: white;
+        }
+
+        /* Modal Styles */
+        .modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(8px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            padding: 20px;
+        }
+
+        .modal.active { display: flex; }
+
+        .modal-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            max-width: 520px;
+            width: 100%;
+            padding: 30px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
+            position: relative;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .modal-header h3 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        .modal-close {
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+            font-size: 22px;
+            cursor: pointer;
+            padding: 4px;
+            line-height: 1;
+        }
+
+        .modal-close:hover { color: white; }
+
+        /* Upload Dropzone */
         .dropzone {
-            border: 2px dashed rgba(255, 255, 255, 0.15);
-            border-radius: var(--radius-md);
+            border: 2px dashed rgba(99, 102, 241, 0.3);
+            border-radius: 14px;
             padding: 36px 20px;
             text-align: center;
             cursor: pointer;
-            transition: var(--transition);
-            background: rgba(255, 255, 255, 0.02);
-            position: relative;
+            background: rgba(99, 102, 241, 0.04);
+            transition: all 0.2s;
+            margin-bottom: 20px;
         }
 
         .dropzone:hover, .dropzone.dragover {
             border-color: var(--primary);
-            background: rgba(99, 102, 241, 0.06);
-            transform: translateY(-2px);
+            background: rgba(99, 102, 241, 0.08);
         }
 
-        .dropzone-icon {
-            width: 48px;
-            height: 48px;
-            margin: 0 auto 12px;
-            color: var(--primary);
-            background: var(--primary-glow);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        .dropzone svg { width: 44px; height: 44px; stroke: #a5b4fc; margin-bottom: 12px; }
+
+        .dropzone-title { font-weight: 600; font-size: 14.5px; margin-bottom: 4px; }
+        .dropzone-sub { font-size: 12px; color: var(--text-dim); }
+
+        .form-row {
+            margin-bottom: 16px;
         }
 
-        .dropzone-text {
-            font-size: 14px;
-            font-weight: 500;
-            color: var(--text-main);
-            margin-bottom: 4px;
-        }
-
-        .dropzone-sub {
-            font-size: 12px;
-            color: var(--text-sub);
-        }
-
-        .file-input {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            opacity: 0;
-            cursor: pointer;
-        }
-
-        .selected-file-preview {
-            display: none;
-            margin-top: 16px;
-            padding: 12px;
-            background: var(--bg-surface);
-            border-radius: var(--radius-md);
-            border: 1px solid var(--border);
-            font-size: 13px;
-        }
-
-        .selected-file-name {
-            font-weight: 600;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            color: var(--accent-cyan);
-        }
-
-        .selected-file-size {
-            font-size: 12px;
-            color: var(--text-muted);
-        }
-
-        .form-group {
-            margin-top: 16px;
-        }
-
-        .form-label {
+        .form-row label {
             display: block;
             font-size: 13px;
             font-weight: 500;
@@ -592,711 +1158,614 @@ if ($action === 'purge' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             margin-bottom: 6px;
         }
 
-        .input-text, .select {
+        .form-row input, .form-row select {
             width: 100%;
-            padding: 10px 14px;
-            background: var(--bg-surface);
+            background: rgba(14, 21, 38, 0.9);
             border: 1px solid var(--border);
-            border-radius: var(--radius-md);
-            color: var(--text-main);
-            font-size: 14px;
+            border-radius: 10px;
+            padding: 10px 14px;
+            color: white;
+            font-size: 13.5px;
             outline: none;
-            transition: var(--transition);
         }
 
-        .input-text:focus, .select:focus {
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px var(--primary-glow);
-        }
-
-        .btn-primary {
-            width: 100%;
-            margin-top: 20px;
-            padding: 12px 18px;
-            background: linear-gradient(135deg, var(--primary), var(--primary-hover));
-            border: none;
-            border-radius: var(--radius-md);
-            color: #ffffff;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
-            transition: var(--transition);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-        }
-
-        .btn-primary:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.6);
-        }
-
-        .btn-primary:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        /* Files Gallery */
-        .gallery-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-            gap: 12px;
-        }
-
-        .filter-tabs {
-            display: flex;
-            background: var(--bg-surface);
-            padding: 4px;
-            border-radius: var(--radius-md);
-            border: 1px solid var(--border);
-            gap: 4px;
-        }
-
-        .filter-btn {
-            padding: 6px 14px;
-            background: transparent;
-            border: none;
-            border-radius: var(--radius-sm);
-            color: var(--text-muted);
-            font-size: 13px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: var(--transition);
-        }
-
-        .filter-btn.active {
-            background: var(--primary);
-            color: #ffffff;
-        }
-
-        .files-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-            gap: 18px;
-        }
-
-        .file-card {
-            background: var(--bg-surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-md);
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            transition: var(--transition);
-            position: relative;
-        }
-
-        .file-card:hover {
-            border-color: rgba(99, 102, 241, 0.4);
-            transform: translateY(-3px);
-            box-shadow: var(--shadow-card);
-        }
-
-        .file-preview {
-            width: 100%;
-            height: 160px;
-            background: #080c14;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-            position: relative;
-        }
-
-        .file-preview img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            transition: transform 0.3s ease;
-        }
-
-        .file-card:hover .file-preview img {
-            transform: scale(1.05);
-        }
-
-        .doc-preview-box {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            width: 100%;
-            height: 100%;
-            background: radial-gradient(circle at center, rgba(30, 41, 59, 0.4) 0%, rgba(8, 12, 20, 0.9) 100%);
-        }
-
-        .doc-preview-icon {
-            width: 52px;
-            height: 52px;
-            border-radius: var(--radius-md);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 13px;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            transition: transform 0.2s ease;
-        }
-
-        .file-card:hover .doc-preview-icon {
-            transform: scale(1.08);
-        }
-
-        .doc-word { background: rgba(43, 87, 154, 0.25); color: #60a5fa; border: 1px solid rgba(43, 87, 154, 0.5); }
-        .doc-excel { background: rgba(33, 115, 70, 0.25); color: #34d399; border: 1px solid rgba(33, 115, 70, 0.5); }
-        .doc-ppt { background: rgba(210, 71, 38, 0.25); color: #fb923c; border: 1px solid rgba(210, 71, 38, 0.5); }
-        .doc-pdf { background: rgba(224, 36, 36, 0.25); color: #f87171; border: 1px solid rgba(224, 36, 36, 0.5); }
-        .doc-zip { background: rgba(217, 119, 6, 0.25); color: #fbbf24; border: 1px solid rgba(217, 119, 6, 0.5); }
-        .doc-generic { background: rgba(99, 102, 241, 0.25); color: #a5b4fc; border: 1px solid rgba(99, 102, 241, 0.5); }
-
-        .type-badge {
-            display: inline-block;
-            padding: 2px 7px;
-            border-radius: 4px;
-            font-size: 11px;
-            font-weight: 600;
-            background: rgba(255, 255, 255, 0.06);
-            color: var(--text-sub);
-            border: 1px solid var(--border);
-        }
-
-        .type-badge.word { color: #93c5fd; background: rgba(59, 130, 246, 0.12); border-color: rgba(59, 130, 246, 0.3); }
-        .type-badge.excel { color: #86efac; background: rgba(34, 197, 94, 0.12); border-color: rgba(34, 197, 94, 0.3); }
-        .type-badge.ppt { color: #fdba74; background: rgba(249, 115, 22, 0.12); border-color: rgba(249, 115, 22, 0.3); }
-        .type-badge.pdf { color: #fca5a5; background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.3); }
-
-        .doc-icon {
-            width: 48px;
-            height: 48px;
-            color: var(--text-sub);
-        }
-
-        .file-info {
-            padding: 14px;
-            flex-grow: 1;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-
-        .file-name {
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--text-main);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .file-meta {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 12px;
-            color: var(--text-muted);
-        }
-
-        .file-actions {
-            display: flex;
-            gap: 6px;
-            padding: 10px 14px;
-            border-top: 1px solid var(--border);
-            background: rgba(0, 0, 0, 0.2);
-        }
-
-        .btn-action {
-            flex: 1;
-            padding: 6px 10px;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            color: var(--text-muted);
-            font-size: 12px;
-            font-weight: 500;
-            text-align: center;
-            text-decoration: none;
-            cursor: pointer;
-            transition: var(--transition);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 4px;
-        }
-
-        .btn-action:hover {
-            background: var(--primary);
-            color: #ffffff;
+        .form-row input:focus, .form-row select:focus {
             border-color: var(--primary);
         }
 
-        .btn-action.btn-delete:hover {
-            background: var(--accent-rose);
-            color: #ffffff;
-            border-color: var(--accent-rose);
-        }
-
-        /* Empty State */
-        .empty-state {
-            grid-column: 1 / -1;
-            padding: 48px 24px;
-            text-align: center;
-            color: var(--text-sub);
-        }
-
-        .empty-state svg {
-            width: 48px;
-            height: 48px;
-            margin-bottom: 12px;
-            opacity: 0.5;
-        }
-
-        /* Toast */
-        .toast {
+        /* Toast Notifications */
+        .toast-container {
             position: fixed;
             bottom: 24px;
             right: 24px;
-            padding: 12px 20px;
-            border-radius: var(--radius-md);
-            font-size: 14px;
-            font-weight: 500;
-            color: #ffffff;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
-            transform: translateY(100px);
-            opacity: 0;
-            transition: var(--transition);
-            z-index: 1000;
-        }
-
-        .toast.show {
-            transform: translateY(0);
-            opacity: 1;
-        }
-
-        .toast-success {
-            background: var(--accent-emerald);
-        }
-
-        .toast-error {
-            background: var(--accent-rose);
-        }
-
-        /* Modal Image Viewer */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.85);
-            backdrop-filter: blur(8px);
-            z-index: 2000;
-            align-items: center;
-            justify-content: center;
-            padding: 24px;
-        }
-
-        .modal.active {
             display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 200;
         }
 
-        .modal-content {
-            max-width: 90%;
-            max-height: 90%;
-            border-radius: var(--radius-lg);
-            overflow: hidden;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
+        .toast {
+            background: #1e293b;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 10px;
+            font-size: 13.5px;
+            font-weight: 500;
             border: 1px solid var(--border);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            animation: slideIn 0.3s ease;
         }
 
-        .modal-content img {
-            max-width: 100%;
-            max-height: 85vh;
-            display: block;
-            object-fit: contain;
+        .toast.error { background: #881337; border-color: #be123c; }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        .empty-state {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-dim);
+        }
+
+        .empty-state svg { width: 56px; height: 56px; stroke: var(--text-dim); margin-bottom: 16px; }
+        .empty-state h4 { font-size: 18px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; }
+
+        @media (max-width: 768px) {
+            .nav-container { padding: 12px 18px; }
+            main { padding: 20px 16px; }
+            .toolbar { flex-direction: column; align-items: stretch; }
+            .search-and-actions { flex-direction: column; align-items: stretch; }
+            .search-box { max-width: 100%; }
         }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <!-- Header -->
-    <header>
-        <div class="brand">
+<header>
+    <div class="nav-container">
+        <div class="brand-area">
             <div class="brand-icon">
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
                 </svg>
             </div>
-            <div class="brand-text">
-                <h1>FileVault Client</h1>
-                <p>Self-Hosted Storage Interface</p>
+            <div class="brand-title">
+                FileVault <span class="brand-badge-tag">Explorer</span>
             </div>
         </div>
 
-        <div class="status-badge" id="connectionStatus">
-            <span class="status-dot" id="statusDot"></span>
-            <span id="statusText">Connecting...</span>
-        </div>
-    </header>
-
-    <!-- Project Stats Overview -->
-    <div class="project-stats-card">
-        <div class="stat-item">
-            <span class="stat-label">Project</span>
-            <span class="stat-value" id="projectName">—</span>
-        </div>
-        <div class="stat-item">
-            <span class="stat-label">Storage Usage</span>
-            <span class="stat-value" id="storageUsage">—</span>
-            <div class="progress-bar-container">
-                <div class="progress-bar-fill" id="storageProgress"></div>
+        <div class="nav-controls" id="navControls" style="<?= $isConnected ? '' : 'display: none;' ?>">
+            <div class="project-pill">
+                <span class="status-dot"></span>
+                <span>Project: <strong id="navProjectName"><?= htmlspecialchars($initialProject['name'] ?? '', ENT_QUOTES, 'UTF-8') ?></strong></span>
             </div>
+            <button class="btn-disconnect" onclick="disconnect()">
+                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                <span>Disconnect</span>
+            </button>
         </div>
-        <div class="stat-item">
-            <span class="stat-label">File Count</span>
-            <span class="stat-value" id="fileCount">—</span>
+    </div>
+</header>
+
+<main>
+    <!-- 1. Connect Card (When Not Authenticated) -->
+    <div class="connect-screen" id="connectScreen" style="<?= $isConnected ? 'display: none;' : '' ?>">
+        <div class="connect-icon-wrapper">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+            </svg>
+        </div>
+        <h2>Connect to Project Vault</h2>
+        <p>Enter an authorized project API key to explore, upload, and stream files securely.</p>
+
+        <form class="form-connect" onsubmit="handleConnect(event)">
+            <div>
+                <label for="inputApiKey">Project API Key</label>
+                <input type="password" id="inputApiKey" class="input-key" placeholder="fvk_xxxxxxxxxxxxxxxxxxxx" autocomplete="off" required autofocus>
+            </div>
+            <button type="submit" class="btn-connect-submit" id="btnConnect">
+                <span>Authenticate & Open Vault</span>
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+            </button>
+        </form>
+
+        <div class="connect-hint">
+            API keys are generated inside the FileVault Admin Control Plane (<a href="../admin" style="color: #818cf8; text-decoration: none;">/admin</a>). Your key is verified server-side and never exposed in the browser.
         </div>
     </div>
 
-    <!-- Main Content Area -->
-    <div class="main-layout">
-        <!-- Upload Form -->
-        <div class="card">
-            <div class="card-title">
-                <span>Upload New File</span>
-                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
-                </svg>
+    <!-- 2. Explorer Dashboard (When Authenticated) -->
+    <div id="explorerSection" style="<?= $isConnected ? '' : 'display: none;' ?>">
+        <!-- Quota Overview Widgets -->
+        <div class="vault-hero">
+            <div class="stat-widget">
+                <div class="stat-header">
+                    <span>Storage Usage</span>
+                    <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2 1.5 3 3.5 3h9c2 0 3.5-1 3.5-3V7M4 7c0-2 1.5-3 3.5-3h9c2 0 3.5 1 3.5 3M4 7h16m-8 4v6"/></svg>
+                </div>
+                <div class="stat-value" id="valStorageUsed">0 MB</div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="barStorage" style="width: 0%;"></div>
+                </div>
+                <div class="stat-sub" id="subStorageLimit">Quota: Loading...</div>
             </div>
 
-            <form id="uploadForm">
-                <div class="dropzone" id="dropzone">
-                    <input type="file" class="file-input" id="fileInput" name="file" required>
-                    <div class="dropzone-icon">
-                        <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
-                        </svg>
-                    </div>
-                    <div class="dropzone-text">Click or drag file here</div>
-                    <div class="dropzone-sub">Images, PDF, Word, Excel, PPT, TXT, JSON, ZIP</div>
+            <div class="stat-widget">
+                <div class="stat-header">
+                    <span>Active Files</span>
+                    <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
                 </div>
-
-                <div class="selected-file-preview" id="filePreview">
-                    <div class="selected-file-name" id="previewName"></div>
-                    <div class="selected-file-size" id="previewSize"></div>
+                <div class="stat-value" id="valFilesCount">0</div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="barFiles" style="width: 0%;"></div>
                 </div>
+                <div class="stat-sub" id="subFilesLimit">Quota: Loading...</div>
+            </div>
 
-                <div class="form-group">
-                    <label class="form-label" for="customName">Custom Filename (Optional)</label>
-                    <input type="text" class="input-text" id="customName" placeholder="Keep original name">
+            <div class="stat-widget">
+                <div class="stat-header">
+                    <span>Max File Size</span>
+                    <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                 </div>
-
-                <div class="form-group">
-                    <label class="form-label" for="visibility">Visibility</label>
-                    <select class="select" id="visibility">
-                        <option value="public" selected>Public (Deliverable via URL)</option>
-                        <option value="private">Private (Restricted)</option>
-                    </select>
+                <div class="stat-value" id="valMaxFileSize">Unlimited</div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar" style="width: 100%; background: #06b6d4;"></div>
                 </div>
+                <div class="stat-sub">Per uploaded object</div>
+            </div>
+        </div>
 
-                <button type="submit" class="btn-primary" id="uploadBtn">
-                    <span>Upload to Vault</span>
+        <!-- Toolbar & Search -->
+        <div class="toolbar">
+            <div class="tabs-group">
+                <button class="tab-btn active" id="tabActive" onclick="switchTab('active')">
+                    <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>
+                    <span>Active Files</span>
+                    <span class="badge-count" id="countActive">0</span>
                 </button>
-            </form>
-        </div>
-
-        <!-- Gallery / File Explorer -->
-        <div class="card">
-            <div class="gallery-header">
-                <div class="card-title" style="margin-bottom: 0;">
-                    <span>Uploaded Files</span>
-                </div>
-
-                <div class="filter-tabs">
-                    <button class="filter-btn active" data-filter="all">All</button>
-                    <button class="filter-btn" data-filter="images">Images</button>
-                    <button class="filter-btn" data-filter="docs">Docs</button>
-                    <button class="filter-btn" data-filter="trash" style="color: #f43f5e; border-color: rgba(244, 63, 94, 0.3);">Trash</button>
-                </div>
+                <button class="tab-btn" id="tabTrash" onclick="switchTab('trash')">
+                    <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                    <span>Trash Bin</span>
+                    <span class="badge-count" id="countTrash">0</span>
+                </button>
             </div>
 
-            <div class="files-grid" id="filesGrid">
-                <!-- Dynamically populated -->
+            <div class="search-and-actions">
+                <div class="search-box">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                    <input type="text" id="searchInput" placeholder="Filter files by name..." oninput="handleSearch()">
+                </div>
+                <button class="btn-upload-primary" onclick="openUploadModal()">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                    <span>Upload</span>
+                </button>
             </div>
         </div>
+
+        <!-- File Type Filter Chips -->
+        <div class="type-filters" id="typeFilters">
+            <button class="filter-chip active" onclick="setFilter('all', this)">All Files</button>
+            <button class="filter-chip" onclick="setFilter('audio', this)">Audio 🎵</button>
+            <button class="filter-chip" onclick="setFilter('image', this)">Images 🖼️</button>
+            <button class="filter-chip" onclick="setFilter('document', this)">Documents 📄</button>
+            <button class="filter-chip" onclick="setFilter('archive', this)">Archives 📦</button>
+        </div>
+
+        <!-- Files Grid Container -->
+        <div class="files-grid" id="filesGrid">
+            <!-- Dynamic File Cards Rendered by JS -->
+        </div>
+    </div>
+</main>
+
+<!-- Upload Modal -->
+<div class="modal" id="uploadModal" onclick="closeOnBackdrop(event, this)">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3>Upload Object</h3>
+            <button class="modal-close" onclick="closeModal('uploadModal')">&times;</button>
+        </div>
+
+        <form id="uploadForm" onsubmit="handleUploadSubmit(event)">
+            <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                </svg>
+                <div class="dropzone-title" id="dropzoneLabel">Click or drag & drop to upload</div>
+                <div class="dropzone-sub">Supports Audio (MP3, WAV, OGG, M4A, FLAC, AAC), Images, Documents, and Archives</div>
+                <input type="file" id="fileInput" style="display: none;" onchange="handleFileSelected(this)">
+            </div>
+
+            <div class="form-row">
+                <label for="customFilename">Custom Name (Optional)</label>
+                <input type="text" id="customFilename" placeholder="e.g. podcast-episode-1.mp3">
+            </div>
+
+            <div class="form-row">
+                <label for="fileVisibility">Visibility Mode</label>
+                <select id="fileVisibility">
+                    <option value="public" selected>Public (Direct stream and CDN shareable)</option>
+                    <option value="private">Private (Restricted to authenticated project)</option>
+                </select>
+            </div>
+
+            <button type="submit" class="btn-connect-submit" id="btnUploadSubmit" style="width: 100%; margin-top: 10px;">
+                <span>Upload to Vault</span>
+            </button>
+        </form>
     </div>
 </div>
 
-<!-- Modal for Image Viewing -->
-<div class="modal" id="imageModal" onclick="this.classList.remove('active')">
-    <div class="modal-content" onclick="event.stopPropagation()">
-        <img id="modalImg" src="" alt="Full preview">
+<!-- Replace Modal -->
+<div class="modal" id="replaceModal" onclick="closeOnBackdrop(event, this)">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3>Replace File Content</h3>
+            <button class="modal-close" onclick="closeModal('replaceModal')">&times;</button>
+        </div>
+
+        <form id="replaceForm" onsubmit="handleReplaceSubmit(event)">
+            <input type="hidden" id="replaceFileId">
+            <div class="dropzone" id="replaceDropzone" onclick="document.getElementById('replaceFileInput').click()">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                <div class="dropzone-title" id="replaceDropzoneLabel">Select replacement file</div>
+                <div class="dropzone-sub">Upload new payload while maintaining the same logical file ID</div>
+                <input type="file" id="replaceFileInput" style="display: none;" onchange="handleReplaceFileSelected(this)">
+            </div>
+
+            <button type="submit" class="btn-connect-submit" id="btnReplaceSubmit" style="width: 100%;">
+                <span>Replace Content</span>
+            </button>
+        </form>
     </div>
 </div>
 
-<!-- Notification Toast -->
-<div class="toast" id="toast"></div>
+<!-- Image Lightbox Modal -->
+<div class="modal" id="imageModal" onclick="closeOnBackdrop(event, this)">
+    <div class="modal-card" style="max-width: 900px; padding: 16px; background: rgba(7, 10, 18, 0.95);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding: 0 8px;">
+            <span id="imageModalTitle" style="font-size: 14px; font-weight: 600;">Image Preview</span>
+            <button class="modal-close" onclick="closeModal('imageModal')">&times;</button>
+        </div>
+        <img id="lightboxImg" src="" alt="Preview" style="width: 100%; max-height: 75vh; object-fit: contain; border-radius: 12px;">
+    </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
 
 <script>
-    const API_URL = <?= json_encode($apiUrl) ?>;
-    let allFiles = [];
+    let currentTab = 'active';
     let currentFilter = 'all';
+    let cachedFiles = [];
+    let isConnected = <?= $isConnected ? 'true' : 'false' ?>;
 
-    function showToast(message, type = 'success') {
-        const toast = document.getElementById('toast');
-        toast.textContent = message;
-        toast.className = 'toast show ' + (type === 'error' ? 'toast-error' : 'toast-success');
-        setTimeout(() => toast.classList.remove('show'), 3500);
-    }
-
-    function formatBytes(bytes) {
-        if (!bytes || bytes <= 0) return '0 B';
-        const k = 1024;
-        const sizes = ['B', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    }
-
-    function formatTypeBadge(file) {
-        const ext = (file.original_name.split('.').pop() || '').toUpperCase();
-        const mime = (file.mime_type || '').toLowerCase();
-
-        let badgeClass = 'type-badge';
-        let label = ext || 'FILE';
-
-        if (ext === 'DOC' || ext === 'DOCX') {
-            badgeClass += ' word';
-            label = 'WORD (' + ext + ')';
-        } else if (ext === 'XLS' || ext === 'XLSX') {
-            badgeClass += ' excel';
-            label = 'EXCEL (' + ext + ')';
-        } else if (ext === 'PPT' || ext === 'PPTX') {
-            badgeClass += ' ppt';
-            label = 'POWERPOINT (' + ext + ')';
-        } else if (ext === 'PDF') {
-            badgeClass += ' pdf';
-            label = 'PDF';
-        } else if (ext === 'RTF' || ext === 'ODT' || ext === 'ODS' || ext === 'ODP') {
-            label = ext;
-        } else if (ext === 'TXT' || ext === 'MD' || ext === 'JSON' || ext === 'CSV' || ext === 'XML') {
-            label = ext;
-        } else if (ext === 'ZIP' || ext === 'TAR' || ext === 'GZ') {
-            label = 'ZIP';
-        } else if (mime.startsWith('image/')) {
-            label = ext || mime.split('/')[1]?.toUpperCase() || 'IMAGE';
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+        if (isConnected) {
+            loadStatus();
+            loadFiles();
         }
+    });
 
-        return `<span class="${badgeClass}">${label}</span>`;
-    }
+    // Handle Connect
+    async function handleConnect(e) {
+        e.preventDefault();
+        const input = document.getElementById('inputApiKey');
+        const btn = document.getElementById('btnConnect');
+        const key = input.value.trim();
+        if (!key) return;
 
-    function getDocumentPreviewHtml(file) {
-        const ext = (file.original_name.split('.').pop() || '').toLowerCase();
-        let cls = 'doc-generic';
-        let label = ext.toUpperCase() || 'FILE';
+        btn.disabled = true;
+        btn.innerHTML = '<span>Verifying key...</span>';
 
-        if (ext === 'doc' || ext === 'docx') {
-            cls = 'doc-word';
-            label = 'DOCX';
-        } else if (ext === 'xls' || ext === 'xlsx') {
-            cls = 'doc-excel';
-            label = 'XLSX';
-        } else if (ext === 'ppt' || ext === 'pptx') {
-            cls = 'doc-ppt';
-            label = 'PPTX';
-        } else if (ext === 'pdf') {
-            cls = 'doc-pdf';
-            label = 'PDF';
-        } else if (ext === 'zip' || ext === 'tar' || ext === 'gz') {
-            cls = 'doc-zip';
-            label = 'ZIP';
+        try {
+            const formData = new FormData();
+            formData.append('api_key', key);
+            const res = await fetch('?action=connect', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+
+            if (res.ok && data.connected) {
+                isConnected = true;
+                input.value = '';
+                document.getElementById('connectScreen').style.display = 'none';
+                document.getElementById('explorerSection').style.display = 'block';
+                document.getElementById('navControls').style.display = 'flex';
+                document.getElementById('navProjectName').textContent = data.project.name || 'Vault';
+                showToast(`Connected to project "${data.project.name}"`);
+                loadStatus();
+                loadFiles();
+            } else {
+                showToast(data.error || 'Failed to authenticate API key.', true);
+            }
+        } catch (err) {
+            showToast('Network error while verifying API key.', true);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<span>Authenticate & Open Vault</span>';
         }
-
-        return `
-            <div class="doc-preview-box">
-                <div class="doc-preview-icon ${cls}">
-                    <span>${label}</span>
-                </div>
-            </div>
-        `;
     }
 
-    async function checkStatus() {
-        const statusDot = document.getElementById('statusDot');
-        const statusText = document.getElementById('statusText');
+    // Disconnect
+    async function disconnect() {
+        try {
+            await fetch('?action=disconnect', { method: 'POST' });
+        } finally {
+            isConnected = false;
+            document.getElementById('connectScreen').style.display = 'block';
+            document.getElementById('explorerSection').style.display = 'none';
+            document.getElementById('navControls').style.display = 'none';
+            document.getElementById('filesGrid').innerHTML = '';
+            showToast('Disconnected from vault.');
+        }
+    }
 
+    // Load Project Quota / Status
+    async function loadStatus() {
         try {
             const res = await fetch('?action=api_status');
             const data = await res.json();
+            if (res.ok && data.connected && data.project) {
+                const p = data.project;
+                document.getElementById('navProjectName').textContent = p.name;
 
-            if (data.connected && data.project) {
-                statusDot.className = 'status-dot online';
-                statusText.textContent = 'Connected: ' + data.project.name;
+                const usageBytes = p.usage?.storage_bytes || 0;
+                const quotaBytes = p.quota?.max_storage_bytes || 0;
+                document.getElementById('valStorageUsed').textContent = formatBytes(usageBytes);
+                if (quotaBytes > 0) {
+                    const pct = Math.min(100, Math.round((usageBytes / quotaBytes) * 100));
+                    document.getElementById('barStorage').style.width = pct + '%';
+                    document.getElementById('subStorageLimit').textContent = `Quota: ${formatBytes(quotaBytes)} (${pct}%)`;
+                } else {
+                    document.getElementById('barStorage').style.width = '20%';
+                    document.getElementById('subStorageLimit').textContent = 'Quota: Unlimited';
+                }
 
-                document.getElementById('projectName').textContent = data.project.name;
-                const usage = data.project.usage;
-                const quota = data.project.quota;
+                const fileCount = p.usage?.file_count || 0;
+                const maxFiles = p.quota?.max_file_count || 0;
+                document.getElementById('valFilesCount').textContent = fileCount.toLocaleString();
+                if (maxFiles > 0) {
+                    const pct = Math.min(100, Math.round((fileCount / maxFiles) * 100));
+                    document.getElementById('barFiles').style.width = pct + '%';
+                    document.getElementById('subFilesLimit').textContent = `Quota: ${maxFiles.toLocaleString()} files (${pct}%)`;
+                } else {
+                    document.getElementById('barFiles').style.width = '20%';
+                    document.getElementById('subFilesLimit').textContent = 'Quota: Unlimited';
+                }
 
-                document.getElementById('storageUsage').textContent = 
-                    formatBytes(usage.current_storage_bytes) + ' / ' + (quota.max_storage_bytes > 0 ? formatBytes(quota.max_storage_bytes) : 'Unlimited');
-
-                document.getElementById('storageProgress').style.width = Math.min(usage.storage_percentage, 100) + '%';
-                document.getElementById('fileCount').textContent = usage.current_file_count;
-            } else {
-                statusDot.className = 'status-dot offline';
-                statusText.textContent = data.error || 'Connection Failed';
+                const maxSingle = p.quota?.max_file_size_bytes || 0;
+                document.getElementById('valMaxFileSize').textContent = maxSingle > 0 ? formatBytes(maxSingle) : 'Unlimited';
+            } else if (data.connected === false) {
+                disconnect();
             }
         } catch (e) {
-            statusDot.className = 'status-dot offline';
-            statusText.textContent = 'Server Offline';
+            console.error('Failed to load project status', e);
         }
     }
 
+    // Load Files
     async function loadFiles() {
         const grid = document.getElementById('filesGrid');
+        grid.innerHTML = '<div class="empty-state"><h4>Loading files...</h4></div>';
+
+        const endpoint = currentTab === 'active' ? '?action=files' : '?action=trash';
         try {
-            const endpoint = (currentFilter === 'trash') ? '?action=trash' : '?action=files';
             const res = await fetch(endpoint);
             const data = await res.json();
-
-            if (!res.ok) {
-                grid.innerHTML = `<div class="empty-state"><p>${data.error?.message || 'Failed to load files.'}</p></div>`;
-                return;
+            if (res.ok && Array.isArray(data.files)) {
+                cachedFiles = data.files;
+                if (currentTab === 'active') {
+                    document.getElementById('countActive').textContent = data.files.length;
+                } else {
+                    document.getElementById('countTrash').textContent = data.files.length;
+                }
+                renderFilesGrid();
+            } else {
+                grid.innerHTML = `<div class="empty-state"><h4>${data.error?.message || 'Failed to load files.'}</h4></div>`;
             }
-
-            allFiles = data.files || [];
-            renderFiles();
-        } catch (e) {
-            grid.innerHTML = '<div class="empty-state"><p>Error connecting to API.</p></div>';
+        } catch (err) {
+            grid.innerHTML = '<div class="empty-state"><h4>Network error while loading files.</h4></div>';
         }
     }
 
-    function renderFiles() {
-        const grid = document.getElementById('filesGrid');
-        grid.innerHTML = '';
+    // Switch Tabs
+    function switchTab(tab) {
+        currentTab = tab;
+        document.getElementById('tabActive').classList.toggle('active', tab === 'active');
+        document.getElementById('tabTrash').classList.toggle('active', tab === 'trash');
+        loadFiles();
+    }
 
-        let filtered = allFiles;
-        if (currentFilter === 'images') {
-            filtered = allFiles.filter(f => f.mime_type.startsWith('image/'));
-        } else if (currentFilter === 'docs') {
-            filtered = allFiles.filter(f => !f.mime_type.startsWith('image/'));
-        }
+    // Filter Chips
+    function setFilter(type, btn) {
+        currentFilter = type;
+        document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        renderFilesGrid();
+    }
+
+    // Search
+    function handleSearch() {
+        renderFilesGrid();
+    }
+
+    // Render Cards in Grid
+    function renderFilesGrid() {
+        const grid = document.getElementById('filesGrid');
+        const query = document.getElementById('searchInput').value.toLowerCase().trim();
+
+        const filtered = cachedFiles.filter(file => {
+            const nameMatch = file.original_name.toLowerCase().includes(query) || String(file.id).includes(query);
+            if (!nameMatch) return false;
+
+            if (currentFilter === 'all') return true;
+            const category = getFileCategory(file);
+            return category === currentFilter;
+        });
 
         if (filtered.length === 0) {
-            const emptyMsg = currentFilter === 'trash' ? 'Trash is empty.' : 'No files found in this category.';
             grid.innerHTML = `
                 <div class="empty-state">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
                     </svg>
-                    <p>${emptyMsg}</p>
+                    <h4>No files found</h4>
+                    <p>${currentTab === 'active' ? 'Upload an audio file, image, or document to get started.' : 'Trash bin is empty.'}</p>
                 </div>
             `;
             return;
         }
 
-        filtered.forEach(file => {
-            const isImage = file.mime_type.startsWith('image/');
-            const isTrashed = file.status === 'trashed';
-            const card = document.createElement('div');
-            card.className = 'file-card';
+        grid.innerHTML = filtered.map(file => renderFileCard(file)).join('');
+    }
 
-            // Ensure fileUrl includes correct API_URL host/port
-            let fileUrl = file.url;
-            if (fileUrl && fileUrl.startsWith('http://localhost/') && API_URL.includes(':8000')) {
-                fileUrl = fileUrl.replace('http://localhost/', API_URL + '/');
-            } else if (!fileUrl && file.storage_key) {
-                fileUrl = API_URL + '/files/' + file.storage_key;
-            }
+    function getFileCategory(file) {
+        const mime = (file.mime_type || '').toLowerCase();
+        const ext = file.original_name.split('.').pop().toLowerCase();
 
-            const previewHtml = (isImage && !isTrashed)
-                ? `<img src="${fileUrl}" alt="${file.original_name}" loading="lazy" onclick="openModal('${fileUrl}')">`
-                : getDocumentPreviewHtml(file);
+        if (mime.startsWith('audio/') || ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'weba'].includes(ext)) return 'audio';
+        if (mime.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'ico'].includes(ext)) return 'image';
+        if (mime.includes('pdf') || mime.includes('document') || mime.includes('sheet') || mime.includes('text') || ['pdf', 'txt', 'docx', 'xlsx', 'csv', 'md'].includes(ext)) return 'document';
+        if (mime.includes('zip') || mime.includes('tar') || mime.includes('gzip') || ['zip', 'tar', 'gz'].includes(ext)) return 'archive';
+        return 'other';
+    }
 
-            const badgeHtml = isTrashed
-                ? `<span class="type-badge" style="color: #f43f5e; background: rgba(244,63,94,0.15); border-color: rgba(244,63,94,0.3);">TRASHED</span>`
-                : formatTypeBadge(file);
+    function renderFileCard(file) {
+        const isTrashed = (currentTab === 'trash');
+        const category = getFileCategory(file);
+        const isAudio = (category === 'audio');
+        const isImage = (category === 'image');
+        const isPublic = (file.visibility === 'public');
+        const directUrl = file.url || `?action=download&id=${file.id}`;
 
-            const actionsHtml = isTrashed ? `
-                <a href="?action=download&id=${file.id}" class="btn-action" title="Download trashed file" download="${file.original_name}">
+        let previewHtml = '';
+        if (isImage && !isTrashed) {
+            previewHtml = `
+                <div class="card-preview">
+                    <img src="${directUrl}" alt="${escapeHtml(file.original_name)}" loading="lazy" onclick="openLightbox('${directUrl}', '${escapeHtml(file.original_name)}')">
+                </div>
+            `;
+        } else if (isAudio && !isTrashed) {
+            previewHtml = `
+                <div class="card-preview">
+                    <div class="audio-preview-box">
+                        <div class="audio-wave-anim">
+                            <div class="audio-bar"></div>
+                            <div class="audio-bar"></div>
+                            <div class="audio-bar"></div>
+                            <div class="audio-bar"></div>
+                            <div class="audio-bar"></div>
+                            <div class="audio-bar"></div>
+                        </div>
+                        <audio class="inline-audio-player" controls preload="none">
+                            <source src="${directUrl}" type="${file.mime_type || 'audio/mpeg'}">
+                            Your browser does not support audio streaming.
+                        </audio>
+                    </div>
+                </div>
+            `;
+        } else {
+            previewHtml = `
+                <div class="card-preview">
+                    <div class="generic-file-preview">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                        </svg>
+                        <span>${escapeHtml(file.original_name.split('.').pop().toUpperCase() || 'FILE')}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        let badgeClass = 'badge-doc';
+        if (isAudio) badgeClass = 'badge-audio';
+        else if (isImage) badgeClass = 'badge-image';
+        if (isTrashed) badgeClass = 'badge-trash';
+
+        const badgeLabel = isTrashed ? 'TRASHED' : (isAudio ? 'AUDIO' : (isImage ? 'IMAGE' : (isPublic ? 'PUBLIC' : 'PRIVATE')));
+
+        let actionsHtml = '';
+        if (isTrashed) {
+            actionsHtml = `
+                <a href="?action=download&id=${file.id}" class="btn-card" download="${escapeHtml(file.original_name)}">
                     <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                     <span>Download</span>
                 </a>
-                <button class="btn-action" onclick="restoreFile(${file.id})" style="color: #34d399;" title="Restore to active">
+                <button class="btn-card success" onclick="restoreFile(${file.id})">
                     <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                     <span>Restore</span>
                 </button>
-                <button class="btn-action btn-delete" onclick="purgeFile(${file.id})" title="Permanently delete from storage">
+                <button class="btn-card danger" onclick="purgeFile(${file.id})">
                     <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                     <span>Purge</span>
                 </button>
-            ` : `
-                <a href="?action=download&id=${file.id}" class="btn-action" title="Download file" download="${file.original_name}">
+            `;
+        } else {
+            actionsHtml = `
+                <button class="btn-card" onclick="copyStreamUrl('${directUrl}')" title="Copy public stream link">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                    <span>Copy URL</span>
+                </button>
+                <a href="?action=download&id=${file.id}" class="btn-card" download="${escapeHtml(file.original_name)}">
                     <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                     <span>Download</span>
                 </a>
-                <button class="btn-action" onclick="copyUrl('${fileUrl}')" title="Copy public URL">
-                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
-                    <span>Link</span>
+                <button class="btn-card" onclick="openReplaceModal(${file.id})" title="Replace payload">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                 </button>
-                <button class="btn-action btn-delete" onclick="deleteFile(${file.id})" title="Move to trash">
+                <button class="btn-card danger" onclick="trashFile(${file.id})" title="Move to trash">
                     <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                 </button>
             `;
+        }
 
-            card.innerHTML = `
-                <div class="file-preview">
-                    ${previewHtml}
-                </div>
-                <div class="file-info">
-                    <div class="file-name" title="${file.original_name}">${file.original_name}</div>
-                    <div class="file-meta">
+        return `
+            <div class="file-card" id="file-${file.id}">
+                ${previewHtml}
+                <div class="card-body">
+                    <div class="file-name-row">
+                        <div class="file-title" title="${escapeHtml(file.original_name)}">${escapeHtml(file.original_name)}</div>
+                        <span class="badge-type ${badgeClass}">${badgeLabel}</span>
+                    </div>
+                    <div class="file-meta-row">
+                        <span>#${file.id}</span>
                         <span>${formatBytes(file.size_bytes)}</span>
-                        <span>${badgeHtml}</span>
+                        <span>${formatDate(file.created_at)}</span>
+                    </div>
+                    <div class="card-actions">
+                        ${actionsHtml}
                     </div>
                 </div>
-                <div class="file-actions">
-                    ${actionsHtml}
-                </div>
-            `;
-            grid.appendChild(card);
-        });
+            </div>
+        `;
     }
 
-    function openModal(url) {
-        document.getElementById('modalImg').src = url;
-        document.getElementById('imageModal').classList.add('active');
-    }
-
-    function copyUrl(url) {
-        navigator.clipboard.writeText(url).then(() => {
-            showToast('Public link copied to clipboard!');
-        }).catch(() => {
-            showToast('Failed to copy link.', 'error');
-        });
-    }
-
-    async function deleteFile(id) {
+    // File Actions (Trash, Restore, Purge)
+    async function trashFile(id) {
         if (!confirm('Move this file to trash?')) return;
-
         try {
             const res = await fetch(`?action=delete&id=${id}`, { method: 'POST' });
             const data = await res.json();
             if (res.ok) {
                 showToast('File moved to trash.');
                 loadFiles();
-                checkStatus();
+                loadStatus();
             } else {
-                showToast(data.error?.message || 'Delete failed.', 'error');
+                showToast(data.error?.message || 'Failed to move to trash.', true);
             }
         } catch (e) {
-            showToast('Network error while deleting.', 'error');
+            showToast('Network error while moving file to trash.', true);
         }
     }
 
@@ -1305,129 +1774,201 @@ if ($action === 'purge' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             const res = await fetch(`?action=restore&id=${id}`, { method: 'POST' });
             const data = await res.json();
             if (res.ok) {
-                showToast('File restored to active storage.');
+                showToast('File restored to active vault.');
                 loadFiles();
-                checkStatus();
+                loadStatus();
             } else {
-                showToast(data.error?.message || 'Restore failed.', 'error');
+                showToast(data.error?.message || 'Failed to restore file.', true);
             }
         } catch (e) {
-            showToast('Network error while restoring.', 'error');
+            showToast('Network error while restoring file.', true);
         }
     }
 
     async function purgeFile(id) {
-        if (!confirm('Permanently purge this file? This cannot be undone!')) return;
-
+        if (!confirm('Permanently delete this file? This action CANNOT be undone.')) return;
         try {
             const res = await fetch(`?action=purge&id=${id}`, { method: 'POST' });
             const data = await res.json();
             if (res.ok) {
                 showToast('File permanently purged.');
                 loadFiles();
-                checkStatus();
+                loadStatus();
             } else {
-                showToast(data.error?.message || 'Purge failed.', 'error');
+                showToast(data.error?.message || 'Failed to purge file.', true);
             }
         } catch (e) {
-            showToast('Network error while purging.', 'error');
+            showToast('Network error while purging file.', true);
         }
     }
 
-    // Drag and Drop & File Preview
-    const fileInput = document.getElementById('fileInput');
-    const dropzone = document.getElementById('dropzone');
-    const filePreview = document.getElementById('filePreview');
-    const previewName = document.getElementById('previewName');
-    const previewSize = document.getElementById('previewSize');
+    // Upload Handling
+    function openUploadModal() {
+        document.getElementById('uploadModal').classList.add('active');
+        document.getElementById('uploadForm').reset();
+        document.getElementById('dropzoneLabel').textContent = 'Click or drag & drop to upload';
+    }
 
-    fileInput.addEventListener('change', () => {
-        if (fileInput.files.length > 0) {
-            const f = fileInput.files[0];
-            previewName.textContent = f.name;
-            previewSize.textContent = formatBytes(f.size);
-            filePreview.style.display = 'block';
+    function handleFileSelected(input) {
+        if (input.files.length > 0) {
+            document.getElementById('dropzoneLabel').textContent = input.files[0].name + ' (' + formatBytes(input.files[0].size) + ')';
         }
-    });
+    }
 
-    ['dragenter', 'dragover'].forEach(name => {
-        dropzone.addEventListener(name, (e) => {
-            e.preventDefault();
-            dropzone.classList.add('dragover');
-        });
-    });
-
-    ['dragleave', 'drop'].forEach(name => {
-        dropzone.addEventListener(name, (e) => {
-            e.preventDefault();
-            dropzone.classList.remove('dragover');
-        });
-    });
-
-    // Upload Form Submit
-    const uploadForm = document.getElementById('uploadForm');
-    const uploadBtn = document.getElementById('uploadBtn');
-
-    uploadForm.addEventListener('submit', async (e) => {
+    async function handleUploadSubmit(e) {
         e.preventDefault();
-        if (!fileInput.files || fileInput.files.length === 0) {
-            showToast('Please select a file first.', 'error');
+        const fileInput = document.getElementById('fileInput');
+        if (fileInput.files.length === 0) {
+            showToast('Please select a file to upload.', true);
             return;
         }
 
+        const btn = document.getElementById('btnUploadSubmit');
+        btn.disabled = true;
+        btn.innerHTML = '<span>Uploading object...</span>';
+
         const formData = new FormData();
         formData.append('file', fileInput.files[0]);
-        formData.append('visibility', document.getElementById('visibility').value);
-        const customName = document.getElementById('customName').value.trim();
-        if (customName !== '') {
-            formData.append('name', customName);
-        }
-
-        uploadBtn.disabled = true;
-        uploadBtn.innerHTML = '<span>Uploading...</span>';
+        formData.append('visibility', document.getElementById('fileVisibility').value);
+        const customName = document.getElementById('customFilename').value.trim();
+        if (customName) formData.append('name', customName);
 
         try {
             const res = await fetch('?action=upload', {
                 method: 'POST',
-                body: formData,
+                body: formData
             });
             const data = await res.json();
-
-            if (res.ok) {
-                showToast('File uploaded successfully!');
-                uploadForm.reset();
-                filePreview.style.display = 'none';
+            if (res.ok && data.file) {
+                showToast('Object uploaded successfully!');
+                closeModal('uploadModal');
                 loadFiles();
-                checkStatus();
+                loadStatus();
             } else {
-                showToast(data.error?.message || 'Upload failed.', 'error');
+                showToast(data.error?.message || 'Failed to upload object.', true);
             }
         } catch (err) {
-            showToast('Network error during upload.', 'error');
+            showToast('Network error during upload.', true);
         } finally {
-            uploadBtn.disabled = false;
-            uploadBtn.innerHTML = '<span>Upload to Vault</span>';
+            btn.disabled = false;
+            btn.innerHTML = '<span>Upload to Vault</span>';
         }
-    });
+    }
 
-    // Filter Buttons
-    document.querySelectorAll('.filter-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const prev = currentFilter;
-            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            currentFilter = btn.dataset.filter;
-            if (currentFilter === 'trash' || prev === 'trash') {
+    // Replace Handling
+    function openReplaceModal(fileId) {
+        document.getElementById('replaceFileId').value = fileId;
+        document.getElementById('replaceForm').reset();
+        document.getElementById('replaceDropzoneLabel').textContent = 'Select replacement file';
+        document.getElementById('replaceModal').classList.add('active');
+    }
+
+    function handleReplaceFileSelected(input) {
+        if (input.files.length > 0) {
+            document.getElementById('replaceDropzoneLabel').textContent = input.files[0].name + ' (' + formatBytes(input.files[0].size) + ')';
+        }
+    }
+
+    async function handleReplaceSubmit(e) {
+        e.preventDefault();
+        const fileId = document.getElementById('replaceFileId').value;
+        const input = document.getElementById('replaceFileInput');
+        if (input.files.length === 0) {
+            showToast('Please select a replacement file.', true);
+            return;
+        }
+
+        const btn = document.getElementById('btnReplaceSubmit');
+        btn.disabled = true;
+        btn.innerHTML = '<span>Replacing payload...</span>';
+
+        const formData = new FormData();
+        formData.append('file', input.files[0]);
+
+        try {
+            const res = await fetch(`?action=replace&id=${fileId}`, {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+            if (res.ok && data.file) {
+                showToast('File replaced successfully.');
+                closeModal('replaceModal');
                 loadFiles();
+                loadStatus();
             } else {
-                renderFiles();
+                showToast(data.error?.message || 'Failed to replace file.', true);
             }
-        });
-    });
+        } catch (err) {
+            showToast('Network error during replacement.', true);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<span>Replace Content</span>';
+        }
+    }
 
-    // Initial Load
-    checkStatus();
-    loadFiles();
+    // Lightbox / Preview
+    function openLightbox(url, title) {
+        document.getElementById('lightboxImg').src = url;
+        document.getElementById('imageModalTitle').textContent = title;
+        document.getElementById('imageModal').classList.add('active');
+    }
+
+    function copyStreamUrl(url) {
+        navigator.clipboard.writeText(url).then(() => {
+            showToast('Stream URL copied to clipboard!');
+        });
+    }
+
+    // Modal Helpers
+    function closeModal(id) {
+        document.getElementById(id).classList.remove('active');
+    }
+
+    function closeOnBackdrop(e, modal) {
+        if (e.target === modal) {
+            modal.classList.remove('active');
+        }
+    }
+
+    // Toast Notification
+    function showToast(message, isError = false) {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        toast.className = 'toast' + (isError ? ' error' : '');
+        toast.textContent = message;
+        container.appendChild(toast);
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transition = 'opacity 0.3s ease';
+            setTimeout(() => toast.remove(), 300);
+        }, 3200);
+    }
+
+    // Format Helpers
+    function formatBytes(bytes) {
+        if (!bytes || bytes <= 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+    }
+
+    function formatDate(dateStr) {
+        if (!dateStr) return '';
+        try {
+            const d = new Date(dateStr);
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str).replace(/[&<>"']/g, m => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+        })[m]);
+    }
 </script>
 
 </body>

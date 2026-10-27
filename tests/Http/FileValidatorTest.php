@@ -97,4 +97,35 @@ final class FileValidatorTest extends TestCase
 
         FileValidator::validate($this->tempFile, 'malicious_macro.docm', 'application/vnd.ms-word.document.macroEnabled.12');
     }
+
+    public function testValidatesAudioFiles(): void
+    {
+        // MP3 with ID3v2 header
+        $mp3Header = "ID3\x03\x00\x00\x00\x00\x00\x00" . str_repeat("\x00", 20);
+        file_put_contents($this->tempFile, $mp3Header);
+        $mp3Res = FileValidator::validate($this->tempFile, 'track01.mp3', 'audio/mpeg');
+        $this->assertSame('track01.mp3', $mp3Res['safeName']);
+        $this->assertSame('audio/mpeg', $mp3Res['mimeType']);
+
+        // WAV with RIFF WAVE header
+        $wavHeader = "RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x02\x00\x44\xAC\x00\x00";
+        file_put_contents($this->tempFile, $wavHeader);
+        $wavRes = FileValidator::validate($this->tempFile, 'sample.wav', 'audio/wav');
+        $this->assertSame('sample.wav', $wavRes['safeName']);
+        $this->assertSame('audio/wav', $wavRes['mimeType']);
+
+        // OGG with OggS header
+        $oggHeader = "OggS\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00" . str_repeat("\x00", 18);
+        file_put_contents($this->tempFile, $oggHeader);
+        $oggRes = FileValidator::validate($this->tempFile, 'podcast.ogg', 'audio/ogg');
+        $this->assertSame('podcast.ogg', $oggRes['safeName']);
+        $this->assertSame('audio/ogg', $oggRes['mimeType']);
+
+        // M4A audio
+        $m4aHeader = "\x00\x00\x00\x20ftypM4A \x00\x00\x00\x00M4A mp42isom\x00\x00\x00\x00";
+        file_put_contents($this->tempFile, $m4aHeader);
+        $m4aRes = FileValidator::validate($this->tempFile, 'voice_note.m4a', 'audio/mp4');
+        $this->assertSame('voice_note.m4a', $m4aRes['safeName']);
+        $this->assertSame('audio/mp4', $m4aRes['mimeType']);
+    }
 }
