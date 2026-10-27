@@ -60,11 +60,13 @@ final class Router
      */
     public function match(string $method, string $path): ?array
     {
+        $method = strtoupper($method);
         $allowedMethodsForPath = [];
 
         foreach ($this->routes as $route) {
             if (preg_match($route['regex'], $path, $matches)) {
-                if ($route['method'] === $method) {
+                // HEAD requests match GET routes per RFC 9110
+                if ($route['method'] === $method || ($method === 'HEAD' && $route['method'] === 'GET')) {
                     $params = [];
                     foreach ($route['paramNames'] as $index => $name) {
                         $params[$name] = $matches[$index + 1] ?? '';
@@ -78,12 +80,15 @@ final class Router
                 }
 
                 $allowedMethodsForPath[] = $route['method'];
+                if ($route['method'] === 'GET') {
+                    $allowedMethodsForPath[] = 'HEAD';
+                }
             }
         }
 
         if (!empty($allowedMethodsForPath)) {
             return [
-                'methodNotAllowed' => array_unique($allowedMethodsForPath),
+                'methodNotAllowed' => array_values(array_unique($allowedMethodsForPath)),
             ];
         }
 

@@ -52,7 +52,17 @@ final class RouterTest extends TestCase
         $match = $router->match('POST', '/api/v1/files');
         $this->assertNotNull($match);
         $this->assertArrayHasKey('methodNotAllowed', $match);
-        $this->assertSame(['GET'], $match['methodNotAllowed']);
+        $this->assertSame(['GET', 'HEAD'], $match['methodNotAllowed']);
+    }
+
+    public function testMatchesHeadForGetRoute(): void
+    {
+        $router = new Router();
+        $router->get('/files/{id}', fn () => 'deliver');
+
+        $match = $router->match('HEAD', '/files/42');
+        $this->assertNotNull($match);
+        $this->assertSame(['id' => '42'], $match['params']);
     }
 
     public function testReturnsNullForUnmatchedRoute(): void

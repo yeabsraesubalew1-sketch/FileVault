@@ -72,11 +72,22 @@ final class PublicDeliveryController
             );
         }
 
-        // 3. Conditional GET (ETag caching)
+        // 3. Conditional GET (ETag and If-Modified-Since caching)
         $etag = '"' . md5($file->storageKey) . '"';
+        $lastModifiedTimestamp = $file->createdAt->getTimestamp();
+        $lastModifiedHeader = gmdate('D, d M Y H:i:s', $lastModifiedTimestamp) . ' GMT';
+
         $ifNoneMatch = $request->header('if-none-match');
         if ($ifNoneMatch !== null && trim($ifNoneMatch) === $etag) {
-            return Response::notModified($etag);
+            return Response::notModified($etag, ['Last-Modified' => $lastModifiedHeader]);
+        }
+
+        $ifModifiedSince = $request->header('if-modified-since');
+        if ($ifModifiedSince !== null) {
+            $sinceTime = strtotime($ifModifiedSince);
+            if ($sinceTime !== false && $sinceTime >= $lastModifiedTimestamp) {
+                return Response::notModified($etag, ['Last-Modified' => $lastModifiedHeader]);
+            }
         }
 
         // 4. Open physical file stream
@@ -102,7 +113,8 @@ final class PublicDeliveryController
             mimeType: $file->mimeType,
             filename: $file->originalName,
             asDownload: $asDownload,
-            etag: $etag
+            etag: $etag,
+            lastModified: $lastModifiedHeader
         );
     }
 }

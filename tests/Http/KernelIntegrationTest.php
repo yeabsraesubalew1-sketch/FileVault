@@ -218,9 +218,24 @@ final class KernelIntegrationTest extends IntegrationTestCase
 
         // 6. Conditional GET with ETag -> 304 Not Modified
         $etag = $delivRes->headers['ETag'];
+        $lastModified = $delivRes->headers['Last-Modified'] ?? null;
+        $this->assertNotNull($lastModified);
+
         $etagReq = new Request('GET', '/files/' . $storageKey, '/files/' . $storageKey, ['if-none-match' => $etag], [], [], [], 'req_etag');
         $etagRes = $this->kernel->handle($etagReq);
         $this->assertSame(304, $etagRes->statusCode);
+
+        // 6b. Conditional GET with If-Modified-Since -> 304 Not Modified
+        $imsReq = new Request('GET', '/files/' . $storageKey, '/files/' . $storageKey, ['if-modified-since' => $lastModified], [], [], [], 'req_ims');
+        $imsRes = $this->kernel->handle($imsReq);
+        $this->assertSame(304, $imsRes->statusCode);
+
+        // 6c. HEAD Request to Delivery Route -> 200 with matching headers
+        $headReq = new Request('HEAD', '/files/' . $storageKey, '/files/' . $storageKey, [], [], [], [], 'req_head');
+        $headRes = $this->kernel->handle($headReq);
+        $this->assertSame(200, $headRes->statusCode);
+        $this->assertSame('image/png', $headRes->headers['Content-Type']);
+        $headRes->closeStream();
 
         // 7. Delete File (soft delete -> trash)
         $deleteReq = new Request('DELETE', '/api/v1/files/' . $fileId, '/api/v1/files/' . $fileId, ['x-api-key' => $this->apiKeyPlaintext], [], [], [], 'req_del');

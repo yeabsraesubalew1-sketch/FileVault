@@ -94,7 +94,8 @@ final class Response
         string $mimeType,
         string $filename,
         bool $asDownload = false,
-        ?string $etag = null
+        ?string $etag = null,
+        ?string $lastModified = null
     ): self {
         $disposition = $asDownload ? 'attachment' : 'inline';
         $encodedFilename = rawurlencode($filename);
@@ -109,6 +110,10 @@ final class Response
 
         if ($etag !== null) {
             $headers['ETag'] = '"' . trim($etag, '"') . '"';
+        }
+
+        if ($lastModified !== null) {
+            $headers['Last-Modified'] = $lastModified;
         }
 
         $streamCallback = function () use ($streamResource) {
@@ -149,6 +154,14 @@ final class Response
             foreach ($this->headers as $name => $value) {
                 header($name . ': ' . $value, true);
             }
+        }
+
+        // Per RFC 9110, HEAD responses must not send the message body
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'HEAD') {
+            if ($this->streamResource !== null && is_resource($this->streamResource)) {
+                fclose($this->streamResource);
+            }
+            return;
         }
 
         if ($this->streamCallback !== null && is_callable($this->streamCallback)) {
