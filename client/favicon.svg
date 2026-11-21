@@ -1,16 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <defs>
-    <linearGradient id="vaultGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#4f46e5" />
-      <stop offset="100%" stop-color="#06b6d4" />
-    </linearGradient>
-  </defs>
-  <rect width="32" height="32" rx="7" fill="url(#vaultGrad)" />
-  <!-- Lock Shackle -->
-  <path d="M10 14V11a6 6 0 0 1 12 0v3" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" />
-  <!-- Lock Body -->
-  <rect x="7" y="14" width="18" height="13" rx="3.5" fill="#ffffff" />
-  <!-- Keyhole -->
-  <circle cx="16" cy="19.5" r="1.6" fill="#4f46e5" />
-  <path d="M15.2 20.5 L16.8 20.5 L17.2 23.5 L14.8 23.5 Z" fill="#4f46e5" />
+  <rect width="32" height="32" rx="7" fill="#090b0e" stroke="#1e2430" stroke-width="1.5" />
+  <!-- Vault top lid -->
+  <rect x="6" y="6.5" width="20" height="5" rx="2" fill="#101319" stroke="#3b82f6" stroke-width="1.3" />
+  <!-- Vault body -->
+  <path d="M7 11.5v10a2.5 2.5 0 0 0 2.5 2.5h13a2.5 2.5 0 0 0 2.5-2.5v-10" fill="#101319" stroke="#3b82f6" stroke-width="1.3" />
+  <!-- Vault slot / handle -->
+  <line x1="12" y1="16.5" x2="20" y2="16.5" stroke="#60a5fa" stroke-width="1.8" stroke-linecap="round" />
+  <!-- Keyhole / status dot -->
+  <circle cx="16" cy="20.8" r="1.1" fill="#60a5fa" />
 </svg>

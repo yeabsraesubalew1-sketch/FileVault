@@ -151,35 +151,33 @@ The following must never be publicly readable:
 
 ---
 
-## 6. Module Map
+## 6. Module Map & Ownership Matrix
 
-The project is divided into the following architectural modules.
+The project is divided into 12 architectural modules. Each module has an assigned architectural ownership role accountable for its contracts, invariants, and implementation boundaries.
 
-| ID | Module | Responsibility | Primary Dependencies |
-|---|---|---|---|
-| M01 | Core Foundation | Configuration, bootstrap, environment, shared primitives, request IDs | None |
-| M02 | HTTP/API Layer | Routing, controllers, request/response handling, API versioning | M01 |
-| M03 | Authentication & Authorization | API-key authentication, project scoping, permissions | M01, M02, M04 |
-| M04 | Project Management | Projects, status, quotas, limits, project configuration | M01, M05 |
-| M05 | Data & Persistence | MySQL connection, migrations/schema, repositories, transactions | M01 |
-| M06 | Storage Backend | Filesystem abstraction, paths, physical file operations | M01, M04 |
-| M07 | File Lifecycle | Upload, validation, replacement, deletion, metadata lifecycle | M02, M03, M04, M05, M06 |
-| M08 | Public File Delivery | Public retrieval, headers, missing-file handling, public URLs | M05, M06 |
-| M09 | Admin Interface | Admin login/session, project management UI, API-key management UI | M02, M04, M05 |
-| M10 | Security & Abuse Controls | Rate limiting, quotas, CORS policy, security headers, abuse controls | M03, M04, M05 |
-| M11 | Observability & Errors | Error envelope, request IDs, structured logs, audit/security events | M01, M02, M05 |
-| M12 | Operations & Deployment | Installation, environment configuration, Apache rules, deployment, maintenance | M01, M05, M06, M11 |
+| ID | Module | Owner Role | Primary Responsibility | Primary Dependencies | Documentation | Status |
+|---|---|---|---|---|---|---|
+| M01 | Core Foundation | Foundation Owner | Configuration, bootstrap, environment, shared primitives, request IDs | None | [M01 Docs](FileVault%20M01%20-%20Core%20Foundation.md) | Complete |
+| M02 | HTTP/API Layer | API Owner | Routing, controllers, request/response handling, API versioning | M01 | [M02 Docs](FileVault%20M02%20-%20HTTP%20API%20Layer.md) | Complete |
+| M03 | Authentication & Authorization | Identity Owner | API-key authentication, project scoping, permissions | M01, M02, M04 | [M03 Docs](FileVault%20M03%20-%20Authentication%20and%20Authorization.md) | Complete |
+| M04 | Project Management | Project Owner | Projects, status, quotas, limits, project configuration | M01, M05 | [M04 Docs](FileVault%20M04%20-%20Project%20Management.md) | Complete |
+| M05 | Data & Persistence | Persistence Owner | MySQL connection, migrations/schema, repositories, transactions | M01 | [M05 Docs](FileVault%20M05%20-%20Data%20and%20Persistence.md) | Complete |
+| M06 | Storage Backend | Storage Owner | Filesystem abstraction, paths, physical file operations | M01, M04 | [M06 Docs](FileVault%20M06%20-%20Storage%20Backend.md) | Complete |
+| M07 | File Lifecycle | File Owner | Upload, validation, replacement, deletion, metadata lifecycle | M02, M03, M04, M05, M06 | [M07 Docs](FileVault%20M07%20-%20File%20Lifecycle.md) | Complete |
+| M08 | Public File Delivery | Delivery Owner | Public retrieval, headers, missing-file handling, public URLs | M05, M06 | [M08 Docs](FileVault%20M08%20-%20Public%20File%20Delivery.md) | Complete |
+| M09 | Admin Interface | Admin Owner | Admin login/session, project management UI, API-key management UI | M02, M04, M05 | [M09 Docs](FileVault%20M09%20-%20Admin%20Interface.md) | Complete |
+| M10 | Security & Abuse Controls | Security Owner | Rate limiting, quotas, CORS policy, security headers, abuse controls | M03, M04, M05 | [M10 Docs](FileVault%20M10%20-%20Security%20and%20Abuse%20Controls.md) | Complete |
+| M11 | Observability & Errors | Observability Owner | Error envelope, request IDs, structured logs, audit/security events | M01, M02, M05 | [M11 Docs](FileVault%20M11%20-%20Observability%20and%20Errors.md) | Complete |
+| M12 | Operations & Deployment | Operations Owner | Installation, environment configuration, Apache rules, deployment, maintenance | M01, M05, M06, M11 | [M12 Docs](FileVault%20M12%20-%20Operations%20and%20Deployment.md) | Complete |
 
-### Ownership model
+### Ownership Model
 
-The architecture establishes **module ownership roles**, not named individuals.
+The architecture establishes **module ownership roles**, not named individuals:
 
-For each module:
-
-- **Module Owner:** accountable for its specification, contracts, dependencies, edge cases, and acceptance.
-- **Implementer:** implements the approved module specification.
-- **Architect:** owns system-level boundaries and resolves cross-module architectural conflicts.
-- **Review/Integration:** verifies module integration and project-level compatibility.
+- **Module Owner:** Accountable for its specification, contracts, dependencies, edge cases, and acceptance.
+- **Implementer:** Implements the approved module specification.
+- **Architect:** Owns system-level boundaries and resolves cross-module architectural conflicts.
+- **Review / Integration:** Verifies module integration and project-level compatibility.
 
 A module owner remains accountable even when implementation is delegated.
 
@@ -369,7 +367,22 @@ Owns:
 
 ---
 
-## 8. Data Architecture
+## 8. Cross-Module Invariants
+
+These architectural invariants govern cross-module interaction and must be preserved across all implementations:
+
+1. **Project isolation:** A project must never be able to access or mutate another project's files, storage objects, or metadata through any valid API credential.
+2. **API keys are server-side secrets:** Project API keys must never be exposed through client-facing code, browser JavaScript, public repository commits, or normal access logs.
+3. **Storage abstraction:** Application and controller layers must never construct physical filesystem paths directly; all physical access must pass through the `StorageBackend` abstraction.
+4. **Successful physical storage precedes metadata persistence:** A file is never marked as uploaded in the database before physical storage has successfully completed and verified the bytes.
+5. **Public delivery never leaks physical paths:** Public retrieval URLs resolve via controlled routing tokens (`/files/{storageKey}` or `/f/{id}`) and must never disclose server storage directories or internal identifiers.
+6. **Deleted files are not active files:** Deletion transitions both the logical metadata state (soft-deletion) and physical storage object (relocation to trash directory) in lockstep.
+7. **Administrative operations are strictly isolated:** Project provisioning, quota modification, operational status toggles, and API key management require separate administrative authentication and CSRF protection, completely segregated from project API keys.
+8. **Production errors are safe:** Internal implementation exceptions, SQL queries, stack traces, and filesystem paths must never be exposed in public API responses.
+
+---
+
+## 9. Data Architecture
 
 The persistence model is implemented in MySQL/MariaDB across three primary relational entities via migrations in `database/migrations`:
 
@@ -463,7 +476,7 @@ This allows public URL/domain changes and storage migrations without rewriting l
 
 ---
 
-## 9. Authentication & Authorization
+## 10. Authentication & Authorization
 
 ### Project API
 
@@ -503,7 +516,7 @@ API request
 
 ---
 
-## 10. API Architecture
+## 11. API Architecture
 
 Base path: `/api/v1/`
 
@@ -535,7 +548,7 @@ Base path: `/api/v1/`
 
 ---
 
-## 11. Upload Lifecycle
+## 12. Upload Lifecycle
 
 For v1:
 
@@ -560,7 +573,7 @@ Interrupted uploads should fail through normal PHP upload handling. Resumable/ch
 
 ---
 
-## 12. File Naming and Storage Layout
+## 13. File Naming and Storage Layout
 
 Original filenames are metadata only.
 
@@ -588,7 +601,7 @@ Application code should work with a storage key/identifier rather than assuming 
 
 ---
 
-## 13. File Visibility
+## 14. File Visibility
 
 Schema supports:
 
@@ -609,7 +622,7 @@ Private files will require an authenticated or signed retrieval mechanism.
 
 ---
 
-## 14. Deletion and Replacement
+## 15. Deletion and Replacement
 
 ### Deletion
 
@@ -645,7 +658,7 @@ This preserves immutable stored objects and simplifies cache behavior.
 
 ---
 
-## 15. Missing Physical Files
+## 16. Missing Physical Files
 
 If metadata says a file exists but the physical object is missing:
 
@@ -658,7 +671,7 @@ The reverse inconsistency—physical object without metadata—should also be de
 
 ---
 
-## 16. Security Architecture
+## 17. Security Architecture
 
 Security is layered:
 
@@ -688,7 +701,7 @@ Explicitly prohibited:
 
 ---
 
-## 17. File Type Policy
+## 18. File Type Policy
 
 v1 uses a strict server-side inspection allowlist.
 
@@ -711,7 +724,7 @@ Validation must use server-side file inspection in addition to the client-provid
 
 ---
 
-## 18. Rate Limits and Quotas
+## 19. Rate Limits and Quotas
 
 Controls exist at project level.
 
@@ -731,7 +744,7 @@ Public GET traffic can later be absorbed by a CDN.
 
 ---
 
-## 19. CORS
+## 20. CORS
 
 CORS is an access-control mechanism for browser cross-origin requests, not authentication.
 
@@ -749,7 +762,7 @@ Direct public asset embedding does not require exposing project API credentials.
 
 ---
 
-## 20. Error Handling
+## 21. Error Handling
 
 Standard error envelope:
 
@@ -790,7 +803,7 @@ Production responses must not expose:
 
 ---
 
-## 21. CDN Strategy
+## 22. CDN Strategy
 
 FileVault remains the origin.
 
@@ -815,7 +828,7 @@ No CDN-specific application coupling is required in v1.
 
 ---
 
-## 22. Configuration
+## 23. Configuration
 
 Secrets and deployment-specific configuration live outside source control.
 
@@ -841,41 +854,19 @@ ADMIN_BOOTSTRAP_SECRET=...
 
 ---
 
-## 23. Git and Repository Hygiene
+## 24. Repository and Environment Hygiene
 
-At minimum:
+Never commit secrets, credentials, or runtime artifacts to version control:
 
-```gitignore
-.env
-.env.*
-!.env.example
-
-/storage/
-/logs/
-/tmp/
-/cache/
-
-*.log
-
-/vendor/
-
-.DS_Store
-Thumbs.db
-```
-
-Never commit:
-
-- API keys
-- admin credentials
-- uploaded files
-- production logs
-- database dumps
-- temporary files
-- real environment configuration
+- Environment files with active credentials (`.env`, `.env.*`; only `.env.example` is tracked).
+- Physical storage directories (`/storage/active/`, `/storage/trash/`).
+- Runtime logs and temporary uploads (`/logs/*.log`, `/tmp/`).
+- Vendor dependencies (`/vendor/`).
+- Database dumps or unhashed API credentials.
 
 ---
 
-## 24. Backup and Recovery
+## 25. Backup and Recovery
 
 Backups are intentionally outside v1.
 
@@ -892,7 +883,7 @@ A backup that contains only one side is incomplete.
 
 ---
 
-## 25. Hosting Constraints
+## 26. Hosting Constraints
 
 The architecture assumes a constrained shared-hosting environment.
 
@@ -911,7 +902,7 @@ Where scheduled work becomes necessary, Bluehost cron can be used.
 
 ---
 
-## 26. Future Storage Migration
+## 27. Future Storage Migration
 
 The storage boundary should allow implementations such as:
 
@@ -927,7 +918,7 @@ The API and consuming applications should not need to know which backend is acti
 
 ---
 
-## 27. Dependency Direction
+## 28. Dependency Direction
 
 Preferred dependency flow:
 
@@ -955,7 +946,7 @@ Cross-module access should occur through explicit contracts.
 
 ---
 
-## 28. Module Dependency Graph
+## 29. Module Dependency Graph
 
 ```text
                          M01 Core
@@ -984,95 +975,11 @@ The graph is conceptual; final contracts may refine dependency direction.
 
 ---
 
-## 29. Recommended Specification / Implementation Order
+## 30. Control Surfaces and Client Tooling
 
-### Phase 1 — Foundations
+FileVault provides three dedicated interfaces for operations, testing, and administration:
 
-1. M01 Core Foundation
-2. M05 Data & Persistence
-3. M06 Storage Backend
-
-### Phase 2 — Identity and access
-
-4. M04 Project Management
-5. M03 Authentication & Authorization
-6. M10 Security & Abuse Controls
-
-### Phase 3 — File capabilities
-
-7. M07 File Lifecycle
-8. M08 Public File Delivery
-9. M11 Observability & Errors
-
-### Phase 4 — Management surface
-
-10. M09 Admin Interface
-
-### Phase 5 — Deployment
-
-11. M12 Operations & Deployment
-12. End-to-end integration review
-
-The order is dependency-aware but does not require implementation to be completed strictly serially where contracts permit parallel work.
-
----
-
-## 30. Architectural Decision Status
-
-### DECIDED & IMPLEMENTED
-
-- **Runtime & Deployment:** PHP 8.4+ running under native SAPI (Apache, Nginx, built-in CLI server) without heavy external framework bloat.
-- **REST Transport & HTTP Layer (M02):** Full `/api/v1` implementation with custom lightweight Router, Request, Response, and Kernel abstractions.
-- **Project API Authentication (M03):** High-entropy API key credentials (`fvk_<publicId>_<secret>`) with 32-byte SHA-256 hashed storage and constant-time verification.
-- **Project Management (M04):** Authoritative quotas (`max_file_size`, `max_file_count`, `max_storage_bytes`), status transitions (`ACTIVE`, `RESTRICTED`, `DISABLED`), and usage tracking via `UsageDelta`.
-- **Database & Persistence (M05):** Strict MySQL relational schemas with typed migrations (`projects`, `api_keys`, `files`), transaction boundaries, and immutable record mapping.
-- **Storage Backend (M06):** Abstracted `StorageBackend` contract with `LocalFilesystemStorage` implementing partitioned storage keys (`YYYY/MM/<token>`) under `active/` and `trash/` directories.
-- **File Lifecycle (M07):** Complete transactional lifecycle coordination for create, soft delete (trash), restore, permanent purge, and immutable replacement with quota synchronization.
-- **Public File Delivery (M08):** Controlled public asset delivery under `/files/{storageKey}` and `/f/{id}` with streaming responses, strict MIME headers, and conditional HTTP caching (`ETag`, `304 Not Modified`).
-- **Security & Type Validation (M10):** Allowlist-based MIME inspection, dangerous extension rejection (`.php`, scripts, executables), double-extension attack defense, and filename sanitization.
-- **Observability & Error Envelopes (M11):** Universal JSON error envelope (`error: {code, message, request_id, details}`), centralized `ExceptionMapper`, and structured native PHP logging.
-- **Admin Control Plane (M09):** Protected web administration dashboard (`/admin`) with session authentication (`ADMIN_PASSWORD`), CSRF protection, live metrics, project quota/status controls, and API key lifecycle management.
-- **CLI Administration Tool:** Complete console tool (`bin/console.php`) for project creation, listing, API key generation, key revocation, and database migrations.
-- **Interactive Client Interface:** Standalone web explorer (`client/index.php`) featuring drag-and-drop uploads, live gallery thumbnails, download actions, and quota monitoring.
-
-### DEFERRED (Post-v1)
-
-- Private signed download URLs (for authenticated non-public assets).
-- Resumable/chunked multi-part uploads.
-- Automatic background trash purging cron workers.
-- Automated remote cloud backup sync.
-- Cloud object-storage backend adapter (e.g. S3 / Cloudflare R2).
-
----
-
-## 31. Architecture Change Rules
-
-Any change that affects:
-
-- module boundaries
-- public API contracts
-- authentication model
-- storage abstraction
-- project isolation
-- file lifecycle semantics
-- security boundaries
-- persistence invariants
-
-must be reviewed at architecture level before implementation.
-
-Local implementation details that do not affect these boundaries may remain within the owning module.
-
----
-
-## 32. Current Architectural State
-
-**Implementation State:** COMPLETE & TESTED (Modules M01–M11).
-
-All core architecture modules and management interfaces are fully implemented and verified with automated test suites passing 100% (222 tests, 549 assertions).
-
----
-
-## 33. CLI Administration Console (`bin/console.php`)
+### 30.1 CLI Administration Console (`bin/console.php`)
 
 Control-plane administration is executed via `bin/console.php` from the server command line:
 
@@ -1096,9 +1003,7 @@ php bin/console.php key:list <projectId>
 php bin/console.php key:revoke <keyId>
 ```
 
----
-
-## 34. Standalone Client Explorer Interface (`client/`)
+### 30.2 Standalone Client Explorer Interface (`client/`)
 
 A separate web interface is provided in `client/` for testing and managing file operations:
 
@@ -1111,9 +1016,7 @@ A separate web interface is provided in `client/` for testing and managing file 
   - Direct file download buttons and one-click public URL copying.
   - File deletion with instant vault synchronization.
 
----
-
-## 35. Admin Web Management Interface (`/admin`)
+### 30.3 Admin Web Management Interface (`/admin`)
 
 An administrator interface is hosted directly under `/admin` on the primary FileVault server:
 
@@ -1126,6 +1029,54 @@ An administrator interface is hosted directly under `/admin` on the primary File
 - **Key Lifecycle Management:**
   - Generate high-entropy project API keys with one-time plaintext credential display and single-click clipboard copying.
   - Immediately revoke compromised or deprecated keys.
-- **Visual Design:** Glassmorphic dark aesthetic matching the FileVault design system, responsive card grids, live storage meters, and dedicated favicons (`favicon.svg`, `favicon.ico`).
+- **Visual Design:** Dark obsidian and engineering blue aesthetic matching the FileVault design system, responsive card grids, live storage meters, monospace status tags, and dedicated favicons (`favicon.svg`, `favicon.ico`).
+
+---
+
+## 31. Architectural Decision Status and Baseline
+
+**Current Implementation State:** COMPLETE & TESTED (Modules M01–M12).  
+All core architecture modules and management interfaces are fully implemented and verified with automated test suites passing 100% (222 tests, 549 assertions).
+
+### Decided & Implemented
+
+- **Runtime & Deployment (M01, M12):** PHP 8.4+ running under native SAPI (Apache, Nginx, built-in CLI server) without heavy external framework bloat. Production Apache `.htaccess` rewrite rules, security headers, environment configuration (`.env.example`), MySQL schema migration runner, diagnostic health checks, and zero-downtime deployment automation.
+- **REST Transport & HTTP Layer (M02):** Full `/api/v1` implementation with custom lightweight Router, Request, Response, and Kernel abstractions.
+- **Project API Authentication (M03):** High-entropy API key credentials (`fvk_<publicId>_<secret>`) with 32-byte SHA-256 hashed storage and constant-time verification.
+- **Project Management (M04):** Authoritative quotas (`max_file_size`, `max_file_count`, `max_storage_bytes`), status transitions (`ACTIVE`, `RESTRICTED`, `DISABLED`), and usage tracking via `UsageDelta`.
+- **Database & Persistence (M05):** Strict MySQL relational schemas with typed migrations (`projects`, `api_keys`, `files`), transaction boundaries, and immutable record mapping.
+- **Storage Backend (M06):** Abstracted `StorageBackend` contract with `LocalFilesystemStorage` implementing partitioned storage keys (`YYYY/MM/<token>`) under `active/` and `trash/` directories.
+- **File Lifecycle (M07):** Complete transactional lifecycle coordination for create, soft delete (trash), restore, permanent purge, and immutable replacement with quota synchronization.
+- **Public File Delivery (M08):** Controlled public asset delivery under `/files/{storageKey}` and `/f/{id}` with streaming responses, strict MIME headers, and conditional HTTP caching (`ETag`, `304 Not Modified`).
+- **Admin Control Plane (M09):** Protected web administration dashboard (`/admin`) with session authentication (`ADMIN_PASSWORD`), CSRF protection, live metrics, project quota/status controls, and API key lifecycle management.
+- **Security & Type Validation (M10):** Allowlist-based MIME inspection, dangerous extension rejection (`.php`, scripts, executables), double-extension attack defense, and filename sanitization.
+- **Observability & Error Envelopes (M11):** Universal JSON error envelope (`error: {code, message, request_id, details}`), centralized `ExceptionMapper`, and structured native PHP logging.
+
+### Deferred Capabilities (Post-v1)
+
+- Private signed download URLs (for authenticated non-public assets).
+- Resumable/chunked multi-part uploads.
+- Automatic background trash purging cron workers.
+- Automated remote cloud backup sync.
+- Cloud object-storage backend adapter (e.g. S3 / Cloudflare R2).
+
+---
+
+## 32. Architecture Change Rules
+
+Any change that affects:
+
+- module boundaries
+- public API contracts
+- authentication model
+- storage abstraction
+- project isolation
+- file lifecycle semantics
+- security boundaries
+- persistence invariants
+
+must be reviewed at architecture level before implementation.
+
+Local implementation details that do not affect these boundaries may remain within the owning module.
 
 
