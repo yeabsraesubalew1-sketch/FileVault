@@ -456,7 +456,7 @@ final class AdminController
     {
         $errorAlert = $error ? '
         <div class="alert alert-error">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
             <span>' . htmlspecialchars($error, ENT_QUOTES, 'UTF-8') . '</span>
         </div>' : '';
 
@@ -468,167 +468,189 @@ final class AdminController
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FileVault — Admin Control Plane</title>
+    <title>FileVault — Control Plane Login</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="alternate icon" href="/favicon.ico">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-base: #080c14;
-            --bg-surface: #0f172a;
-            --bg-card: rgba(19, 29, 53, 0.75);
-            --border: rgba(255, 255, 255, 0.08);
-            --border-focus: rgba(99, 102, 241, 0.5);
-            --primary: #6366f1;
-            --primary-hover: #4f46e5;
-            --primary-glow: rgba(99, 102, 241, 0.35);
-            --text-main: #f8fafc;
+            --bg: #090b0e;
+            --surface: #101319;
+            --surface-elevated: #151921;
+            --border: #1e2430;
+            --border-hover: #2d3648;
+            --border-focus: #3b82f6;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --text: #f8fafc;
             --text-muted: #94a3b8;
-            --rose: #f43f5e;
-            --rose-bg: rgba(244, 63, 94, 0.12);
+            --text-dim: #64748b;
+            --danger: #ef4444;
+            --danger-bg: #450a0a;
+            --danger-border: #7f1d1d;
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: 'Inter', -apple-system, sans-serif;
-            background: var(--bg-base);
-            color: var(--text-main);
+            font-family: var(--font-sans);
+            background: var(--bg);
+            color: var(--text);
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
             padding: 24px;
-            background-image: 
-                radial-gradient(circle at 50% 20%, rgba(99, 102, 241, 0.12) 0%, transparent 60%),
-                radial-gradient(circle at 80% 80%, rgba(6, 182, 212, 0.08) 0%, transparent 50%);
+            -webkit-font-smoothing: antialiased;
         }
 
         .login-card {
             width: 100%;
-            max-width: 440px;
-            background: var(--bg-card);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
+            max-width: 400px;
+            background: var(--surface);
             border: 1px solid var(--border);
-            border-radius: 20px;
-            padding: 44px 36px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
-            animation: fadeIn 0.4s ease-out;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(16px); }
-            to { opacity: 1; transform: translateY(0); }
+            border-radius: 8px;
+            padding: 36px 32px;
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
         }
 
         .brand-header {
-            text-align: center;
-            margin-bottom: 32px;
+            text-align: left;
+            margin-bottom: 28px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 20px;
         }
 
         .brand-badge {
-            width: 60px;
-            height: 60px;
-            margin: 0 auto 18px;
-            background: linear-gradient(135deg, #4f46e5, #06b6d4);
-            border-radius: 16px;
-            display: flex;
+            display: inline-flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 10px 25px -5px var(--primary-glow);
+            width: 38px;
+            height: 38px;
+            background: var(--surface-elevated);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            margin-bottom: 14px;
         }
 
         .brand-badge svg {
-            width: 32px;
-            height: 32px;
-            stroke: white;
+            width: 20px;
+            height: 20px;
+            stroke: #60a5fa;
+        }
+
+        .sys-tag {
+            display: block;
+            font-family: var(--font-mono);
+            font-size: 10.5px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #60a5fa;
+            margin-bottom: 4px;
         }
 
         .brand-header h1 {
-            font-family: 'Plus Jakarta Sans', sans-serif;
-            font-size: 24px;
+            font-size: 19px;
             font-weight: 700;
             letter-spacing: -0.02em;
+            color: var(--text);
         }
 
         .brand-header p {
-            color: var(--text-muted);
-            font-size: 14px;
-            margin-top: 6px;
+            color: var(--text-dim);
+            font-size: 13px;
+            margin-top: 4px;
         }
 
         .alert {
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 12px 16px;
-            border-radius: 12px;
-            font-size: 13.5px;
-            margin-bottom: 24px;
-            background: var(--rose-bg);
-            border: 1px solid rgba(244, 63, 94, 0.3);
-            color: #fecdd3;
+            gap: 10px;
+            padding: 10px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            margin-bottom: 20px;
+            background: var(--danger-bg);
+            border: 1px solid var(--danger-border);
+            color: #fca5a5;
         }
 
-        .alert svg { width: 18px; height: 18px; flex-shrink: 0; }
+        .alert svg { width: 16px; height: 16px; flex-shrink: 0; }
 
         .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 18px;
         }
 
         label {
             display: block;
-            font-size: 13px;
-            font-weight: 500;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
             color: var(--text-muted);
-            margin-bottom: 8px;
+            margin-bottom: 6px;
         }
 
         input {
             width: 100%;
-            background: rgba(15, 23, 42, 0.8);
+            background: var(--surface-elevated);
             border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 13px 16px;
-            color: white;
-            font-size: 14px;
-            font-family: inherit;
+            border-radius: 6px;
+            padding: 10px 12px;
+            color: var(--text);
+            font-size: 13.5px;
+            font-family: var(--font-mono);
             outline: none;
-            transition: all 0.2s ease;
+            transition: border-color 0.15s, box-shadow 0.15s;
         }
 
         input:focus {
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px var(--primary-glow);
+            border-color: var(--border-focus);
+            box-shadow: 0 0 0 1px var(--border-focus);
         }
 
         .btn-submit {
             width: 100%;
-            background: linear-gradient(135deg, var(--primary), var(--primary-hover));
-            border: none;
-            border-radius: 12px;
-            padding: 14px;
-            color: white;
-            font-size: 15px;
+            background: var(--primary);
+            border: 1px solid var(--primary-hover);
+            border-radius: 6px;
+            padding: 11px;
+            color: #ffffff;
+            font-size: 13.5px;
             font-weight: 600;
+            font-family: var(--font-sans);
             cursor: pointer;
-            margin-top: 10px;
-            box-shadow: 0 10px 20px -5px var(--primary-glow);
-            transition: all 0.2s ease;
+            margin-top: 8px;
+            transition: background-color 0.15s, border-color 0.15s;
         }
 
         .btn-submit:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 14px 25px -4px var(--primary-glow);
+            background: var(--primary-hover);
         }
 
         .footer-note {
-            text-align: center;
-            margin-top: 28px;
-            font-size: 12px;
-            color: rgba(148, 163, 184, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 24px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--text-dim);
+        }
+
+        .footer-note .dot-secure {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #10b981;
+            display: inline-block;
+            margin-right: 6px;
         }
     </style>
 </head>
@@ -637,12 +659,13 @@ final class AdminController
 <div class="login-card">
     <div class="brand-header">
         <div class="brand-badge">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
             </svg>
         </div>
-        <h1>FileVault Admin</h1>
-        <p>Control Plane & Key Management</p>
+        <span class="sys-tag">System Access</span>
+        <h1>FileVault Control Plane</h1>
+        <p>Authenticate with administrative credentials</p>
     </div>
 
     {$errorAlert}
@@ -651,20 +674,21 @@ final class AdminController
         <input type="hidden" name="csrf_token" value="{$csrfToken}">
 
         <div class="form-group">
-            <label for="username">Administrator Username</label>
+            <label for="username">Username</label>
             <input type="text" id="username" name="username" required autofocus placeholder="admin" autocomplete="username">
         </div>
 
         <div class="form-group">
-            <label for="password">Master Password</label>
-            <input type="password" id="password" name="password" required placeholder="••••••••" autocomplete="current-password">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required placeholder="Master password" autocomplete="current-password">
         </div>
 
-        <button type="submit" class="btn-submit">Sign In to Dashboard</button>
+        <button type="submit" class="btn-submit">Sign In</button>
     </form>
 
     <div class="footer-note">
-        Protected Control Plane &bull; FileVault v1.0
+        <span><span class="dot-secure"></span>SECURE NODE</span>
+        <span>v1.0.0</span>
     </div>
 </div>
 
@@ -702,7 +726,7 @@ HTML;
             $msg = htmlspecialchars($data['success'], ENT_QUOTES, 'UTF-8');
             $flashHtml .= "
             <div class=\"banner banner-success\">
-                <svg fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\" stroke-width=\"2\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z\"/></svg>
+                <svg width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\" stroke-width=\"2\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M5 13l4 4L19 7\"/></svg>
                 <span>{$msg}</span>
             </div>";
         }
@@ -710,7 +734,7 @@ HTML;
             $msg = htmlspecialchars($data['error'], ENT_QUOTES, 'UTF-8');
             $flashHtml .= "
             <div class=\"banner banner-error\">
-                <svg fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\" stroke-width=\"2\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z\"/></svg>
+                <svg width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\" stroke-width=\"2\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z\"/></svg>
                 <span>{$msg}</span>
             </div>";
         }
@@ -728,17 +752,17 @@ HTML;
             <div class=\"key-generated-banner\">
                 <div class=\"kgb-header\">
                     <div class=\"kgb-icon\">
-                        <svg fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\" stroke-width=\"2\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z\"/></svg>
+                        <svg width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\" stroke-width=\"2\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z\"/></svg>
                     </div>
                     <div>
-                        <h3>New API Key Created: {$keyName} (ID: #{$keyId})</h3>
-                        <p>Project: <strong>{$projName}</strong> &bull; Save this credential immediately. It will not be shown again.</p>
+                        <h3>API Key Generated: {$keyName} (#{$keyId})</h3>
+                        <p>Scope: <strong>{$projName}</strong> &bull; Store this secret securely. It cannot be retrieved again.</p>
                     </div>
                 </div>
                 <div class=\"kgb-box\">
                     <code id=\"newGeneratedKey\">{$keyPlaintext}</code>
                     <button class=\"btn-copy\" onclick=\"copyText('newGeneratedKey', this)\">
-                        <svg fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\" stroke-width=\"2\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3\"/></svg>
+                        <svg width=\"14\" height=\"14\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\" stroke-width=\"2\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3\"/></svg>
                         <span>Copy Key</span>
                     </button>
                 </div>
@@ -756,9 +780,9 @@ HTML;
         if (empty($projects)) {
             $projectsHtml = '
             <div class="empty-state">
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"/></svg>
-                <h3>No projects yet</h3>
-                <p>Create your first project above to begin issuing API keys and uploading files.</p>
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
+                <h3>No Projects Configured</h3>
+                <p>Initialize a project below to allocate storage quotas and generate client API keys.</p>
             </div>';
         } else {
             foreach ($projects as $p) {
@@ -818,10 +842,10 @@ HTML;
                         $keysRowsHtml .= "
                         <tr>
                             <td><span class=\"key-id\">#{$kId}</span></td>
-                            <td><strong>{$kName}</strong></td>
+                            <td><strong class=\"key-name\">{$kName}</strong></td>
                             <td><code class=\"key-prefix\">{$publicPrefix}</code></td>
-                            <td><span class=\"badge {$kStatusClass}\">{$kStatus}</span></td>
-                            <td>{$kCreated}</td>
+                            <td><span class=\"badge {$kStatusClass}\"><span class=\"dot\"></span>{$kStatus}</span></td>
+                            <td class=\"key-date\">{$kCreated}</td>
                             <td class=\"text-right\">{$actionBtn}</td>
                         </tr>";
                     }
@@ -832,10 +856,10 @@ HTML;
                 <div class=\"project-card\" id=\"project-{$pId}\">
                     <div class=\"pc-header\">
                         <div class=\"pc-title-area\">
-                            <div class=\"project-id-badge\">#{$pId}</div>
+                            <div class=\"project-id-badge\">#P-{$pId}</div>
                             <div>
                                 <h3 class=\"project-name\">{$pName}</h3>
-                                <span class=\"project-created\">Created {$p->createdAt->format('M d, Y')}</span>
+                                <span class=\"project-created\">Registered {$p->createdAt->format('Y-m-d H:i')}</span>
                             </div>
                         </div>
                         <div class=\"pc-status-area\">
@@ -860,8 +884,8 @@ HTML;
                     <div class=\"pc-metrics\">
                         <div class=\"metric-box\">
                             <div class=\"metric-label\">
-                                <span>Storage Usage</span>
-                                <span>{$usedStorageStr} / {$maxStorageStr}</span>
+                                <span>Storage Consumption</span>
+                                <span class=\"metric-val-mono\">{$usedStorageStr} / {$maxStorageStr} ({$storagePercent}%)</span>
                             </div>
                             <div class=\"progress-bar\">
                                 <div class=\"progress-fill\" style=\"width: {$storagePercent}%\"></div>
@@ -870,15 +894,15 @@ HTML;
 
                         <div class=\"metric-row\">
                             <div class=\"metric-pill\">
-                                <span class=\"mp-label\">Active Files</span>
+                                <span class=\"mp-label\">Active Objects</span>
                                 <span class=\"mp-val\">{$fileCountStr} <small>/ {$maxFilesStr}</small></span>
                             </div>
                             <div class=\"metric-pill\">
-                                <span class=\"mp-label\">Max Upload</span>
+                                <span class=\"mp-label\">Max Payload Cap</span>
                                 <span class=\"mp-val\">{$maxFileSizeStr}</span>
                             </div>
                             <div class=\"metric-pill\">
-                                <span class=\"mp-label\">API Keys</span>
+                                <span class=\"mp-label\">Authorized Keys</span>
                                 <span class=\"mp-val\">{$keysCount}</span>
                             </div>
                         </div>
@@ -887,13 +911,13 @@ HTML;
                     <!-- Actions Bar -->
                     <div class=\"pc-actions\">
                         <button class=\"btn-ghost\" onclick=\"toggleKeysSection({$pId})\">
-                            <svg fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\" stroke-width=\"2\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z\"/></svg>
+                            <svg width=\"15\" height=\"15\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\" stroke-width=\"2\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z\"/></svg>
                             <span>Manage API Keys ({$keysCount})</span>
                         </button>
 
                         <button class=\"btn-ghost\" onclick=\"openEditQuotaModal({$pId}, '{$pName}', '{$maxStorageStr}', '{$maxFileSizeStr}', {$quota->maxFileCount})\">
-                            <svg fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\" stroke-width=\"2\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z\"/><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M15 12a3 3 0 11-6 0 3 3 0 016 0z\"/></svg>
-                            <span>Edit Quota</span>
+                            <svg width=\"15\" height=\"15\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\" stroke-width=\"2\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4\"/></svg>
+                            <span>Edit Quota Limits</span>
                         </button>
                     </div>
 
@@ -902,7 +926,7 @@ HTML;
                         <div class=\"kp-header\">
                             <h4>API Keys for {$pName}</h4>
                             <button class=\"btn-subtle\" onclick=\"openCreateKeyModal({$pId}, '{$pName}')\">
-                                <svg width=\"14\" height=\"14\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\" stroke-width=\"2\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 4v16m8-8H4\"/></svg>
+                                <svg width=\"13\" height=\"13\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\" stroke-width=\"2.5\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 4v16m8-8H4\"/></svg>
                                 <span>Generate New Key</span>
                             </button>
                         </div>
@@ -935,57 +959,59 @@ HTML;
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FileVault — Administrative Control Plane</title>
+    <title>FileVault — Control Plane Dashboard</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="alternate icon" href="/favicon.ico">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-base: #070a12;
-            --bg-surface: #0f172a;
-            --bg-card: rgba(20, 29, 51, 0.7);
-            --bg-card-hover: rgba(26, 38, 66, 0.85);
-            --border: rgba(255, 255, 255, 0.08);
-            --border-subtle: rgba(255, 255, 255, 0.04);
-            --primary: #6366f1;
-            --primary-hover: #4f46e5;
-            --primary-glow: rgba(99, 102, 241, 0.25);
-            --cyan: #06b6d4;
+            --bg: #090b0e;
+            --surface: #101319;
+            --surface-elevated: #151921;
+            --surface-hover: #1b202a;
+            --border: #1e2430;
+            --border-subtle: #161b24;
+            --border-hover: #2b3345;
+            --border-focus: #3b82f6;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
             --emerald: #10b981;
-            --emerald-bg: rgba(16, 185, 129, 0.12);
+            --emerald-bg: #064e3b;
+            --emerald-border: #047857;
             --amber: #f59e0b;
-            --amber-bg: rgba(245, 158, 11, 0.12);
-            --rose: #f43f5e;
-            --rose-bg: rgba(244, 63, 94, 0.12);
-            --text-main: #f8fafc;
+            --amber-bg: #451a03;
+            --amber-border: #b45309;
+            --rose: #ef4444;
+            --rose-bg: #450a0a;
+            --rose-border: #991b1b;
+            --text: #f8fafc;
             --text-muted: #94a3b8;
+            --text-dim: #64748b;
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: 'Inter', -apple-system, sans-serif;
-            background: var(--bg-base);
-            color: var(--text-main);
+            font-family: var(--font-sans);
+            background: var(--bg);
+            color: var(--text);
             min-height: 100vh;
             padding-bottom: 80px;
-            background-image: 
-                radial-gradient(circle at 10% 10%, rgba(99, 102, 241, 0.08) 0%, transparent 40%),
-                radial-gradient(circle at 90% 90%, rgba(6, 182, 212, 0.06) 0%, transparent 40%);
+            -webkit-font-smoothing: antialiased;
         }
 
         .container {
-            max-width: 1240px;
+            max-width: 1200px;
             margin: 0 auto;
             padding: 0 24px;
         }
 
         /* Top Navigation */
         header {
-            background: rgba(15, 23, 42, 0.75);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
+            background: #0d1016;
             border-bottom: 1px solid var(--border);
             position: sticky;
             top: 0;
@@ -993,7 +1019,7 @@ HTML;
         }
 
         .nav-inner {
-            height: 72px;
+            height: 60px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -1002,164 +1028,185 @@ HTML;
         .brand-area {
             display: flex;
             align-items: center;
-            gap: 14px;
+            gap: 12px;
         }
 
         .brand-icon {
-            width: 40px;
-            height: 40px;
-            background: linear-gradient(135deg, #4f46e5, #06b6d4);
-            border-radius: 12px;
+            width: 32px;
+            height: 32px;
+            background: var(--surface-elevated);
+            border: 1px solid var(--border);
+            border-radius: 6px;
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 8px 16px -4px var(--primary-glow);
         }
 
-        .brand-icon svg { width: 22px; height: 22px; stroke: white; }
+        .brand-icon svg { width: 18px; height: 18px; stroke: #60a5fa; }
+
+        .brand-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
 
         .brand-info h1 {
-            font-family: 'Plus Jakarta Sans', sans-serif;
-            font-size: 18px;
+            font-size: 15px;
             font-weight: 700;
-            letter-spacing: -0.02em;
+            letter-spacing: -0.01em;
+            color: var(--text);
         }
 
-        .brand-info p {
-            font-size: 12px;
+        .brand-env {
+            font-family: var(--font-mono);
+            font-size: 10.5px;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            padding: 2px 7px;
+            background: var(--surface-elevated);
+            border: 1px solid var(--border);
+            border-radius: 4px;
             color: var(--text-muted);
         }
 
         .nav-actions {
             display: flex;
             align-items: center;
-            gap: 16px;
+            gap: 12px;
+        }
+
+        .node-tag {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--text-dim);
+            padding: 4px 10px;
+            background: var(--surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 4px;
+        }
+
+        .node-tag .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--emerald);
         }
 
         .user-tag {
             display: flex;
             align-items: center;
-            gap: 8px;
-            padding: 6px 14px;
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid var(--border);
-            border-radius: 20px;
-            font-size: 13px;
+            gap: 6px;
+            font-family: var(--font-mono);
+            font-size: 11px;
             color: var(--text-muted);
-        }
-
-        .user-tag .dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--emerald);
-            box-shadow: 0 0 8px var(--emerald);
+            padding: 4px 10px;
+            background: var(--surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 4px;
         }
 
         .btn-primary {
             display: inline-flex;
             align-items: center;
-            gap: 8px;
-            background: linear-gradient(135deg, var(--primary), var(--primary-hover));
-            border: none;
-            border-radius: 10px;
-            padding: 9px 18px;
+            gap: 6px;
+            background: var(--primary);
+            border: 1px solid var(--primary-hover);
+            border-radius: 6px;
+            padding: 7px 14px;
             color: white;
-            font-size: 13.5px;
+            font-size: 13px;
             font-weight: 600;
+            font-family: var(--font-sans);
             cursor: pointer;
-            box-shadow: 0 8px 16px -4px var(--primary-glow);
-            transition: all 0.2s ease;
+            transition: background 0.15s;
         }
 
         .btn-primary:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 12px 20px -2px var(--primary-glow);
+            background: var(--primary-hover);
         }
 
         .btn-logout {
             color: var(--text-muted);
             text-decoration: none;
-            font-size: 13px;
-            padding: 8px 12px;
-            border-radius: 8px;
-            transition: all 0.2s;
+            font-size: 12.5px;
+            font-family: var(--font-sans);
+            padding: 6px 10px;
+            border-radius: 6px;
+            border: 1px solid transparent;
+            transition: all 0.15s;
         }
 
         .btn-logout:hover {
             color: var(--rose);
             background: var(--rose-bg);
+            border-color: var(--rose-border);
         }
 
         /* Flash banners */
         .banner {
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 14px 20px;
-            border-radius: 12px;
-            font-size: 14px;
-            margin: 24px 0 0;
-            animation: fadeIn 0.3s ease;
+            gap: 10px;
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-size: 13.5px;
+            margin: 20px 0 0;
         }
 
-        .banner svg { width: 20px; height: 20px; flex-shrink: 0; }
-        .banner-success { background: var(--emerald-bg); border: 1px solid rgba(16, 185, 129, 0.3); color: #a7f3d0; }
-        .banner-error { background: var(--rose-bg); border: 1px solid rgba(244, 63, 94, 0.3); color: #fecdd3; }
+        .banner svg { width: 16px; height: 16px; flex-shrink: 0; }
+        .banner-success { background: var(--emerald-bg); border: 1px solid var(--emerald-border); color: #a7f3d0; }
+        .banner-error { background: var(--rose-bg); border: 1px solid var(--rose-border); color: #fca5a5; }
 
         /* Key Generated Banner */
         .key-generated-banner {
-            margin-top: 24px;
-            background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(6, 182, 212, 0.15));
-            border: 1px solid rgba(99, 102, 241, 0.4);
-            border-radius: 16px;
-            padding: 24px;
-            box-shadow: 0 15px 30px -10px var(--primary-glow);
-            animation: pulseGlow 2s infinite alternate ease-in-out;
-        }
-
-        @keyframes pulseGlow {
-            from { border-color: rgba(99, 102, 241, 0.4); }
-            to { border-color: rgba(6, 182, 212, 0.6); }
+            margin-top: 20px;
+            background: #0d1526;
+            border: 1px solid #1d4ed8;
+            border-radius: 8px;
+            padding: 18px 20px;
         }
 
         .kgb-header {
             display: flex;
             align-items: center;
-            gap: 16px;
-            margin-bottom: 16px;
+            gap: 12px;
+            margin-bottom: 12px;
         }
 
         .kgb-icon {
-            width: 44px;
-            height: 44px;
-            background: linear-gradient(135deg, #4f46e5, #06b6d4);
-            border-radius: 12px;
+            width: 32px;
+            height: 32px;
+            background: var(--surface-elevated);
+            border: 1px solid #1d4ed8;
+            border-radius: 6px;
             display: flex;
             align-items: center;
             justify-content: center;
             flex-shrink: 0;
         }
 
-        .kgb-icon svg { width: 22px; height: 22px; stroke: white; }
+        .kgb-icon svg { width: 16px; height: 16px; stroke: #60a5fa; }
 
-        .kgb-header h3 { font-size: 16px; font-weight: 700; }
-        .kgb-header p { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+        .kgb-header h3 { font-size: 14px; font-weight: 600; color: #f8fafc; }
+        .kgb-header p { font-size: 12.5px; color: var(--text-muted); margin-top: 2px; }
 
         .kgb-box {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            background: rgba(10, 15, 26, 0.85);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 12px;
-            padding: 12px 18px;
-            gap: 16px;
+            background: #080c14;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px 14px;
+            gap: 14px;
         }
 
         .kgb-box code {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 14px;
+            font-family: var(--font-mono);
+            font-size: 13.5px;
             color: #38bdf8;
             word-break: break-all;
             user-select: all;
@@ -1169,59 +1216,60 @@ HTML;
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            background: rgba(99, 102, 241, 0.2);
-            border: 1px solid var(--primary);
-            color: white;
-            border-radius: 8px;
-            padding: 8px 14px;
-            font-size: 12.5px;
+            background: var(--surface-elevated);
+            border: 1px solid var(--border);
+            color: #f8fafc;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 12px;
             font-weight: 600;
+            font-family: var(--font-sans);
             cursor: pointer;
             white-space: nowrap;
-            transition: all 0.2s;
+            transition: all 0.15s;
         }
 
         .btn-copy:hover {
-            background: var(--primary);
+            background: var(--surface-hover);
+            border-color: var(--border-hover);
         }
-
-        .btn-copy svg { width: 14px; height: 14px; }
 
         /* Metrics Bar */
         .metrics-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 20px;
-            margin: 28px 0;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin: 24px 0;
         }
 
         .stat-card {
-            background: var(--bg-card);
+            background: var(--surface);
             border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 20px 24px;
-            backdrop-filter: blur(12px);
+            border-radius: 8px;
+            padding: 18px 20px;
         }
 
         .stat-label {
-            font-size: 12.5px;
-            font-weight: 500;
-            color: var(--text-muted);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-dim);
             text-transform: uppercase;
             letter-spacing: 0.05em;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
         }
 
         .stat-value {
-            font-family: 'Plus Jakarta Sans', sans-serif;
-            font-size: 26px;
+            font-family: var(--font-mono);
+            font-size: 24px;
             font-weight: 700;
             letter-spacing: -0.02em;
+            color: var(--text);
         }
 
         .stat-sub {
-            font-size: 12px;
-            color: var(--text-muted);
+            font-size: 11.5px;
+            color: var(--text-dim);
             margin-top: 4px;
         }
 
@@ -1230,87 +1278,102 @@ HTML;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin: 36px 0 20px;
+            margin: 32px 0 16px;
         }
 
         .section-header h2 {
-            font-family: 'Plus Jakarta Sans', sans-serif;
-            font-size: 20px;
-            font-weight: 700;
+            font-size: 16px;
+            font-weight: 600;
             letter-spacing: -0.01em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .count-badge {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            padding: 2px 7px;
+            background: var(--surface-elevated);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-muted);
         }
 
         /* Project Cards */
         .projects-list {
             display: flex;
             flex-direction: column;
-            gap: 24px;
+            gap: 16px;
         }
 
         .project-card {
-            background: var(--bg-card);
+            background: var(--surface);
             border: 1px solid var(--border);
-            border-radius: 18px;
-            padding: 26px 28px;
-            backdrop-filter: blur(14px);
-            transition: border-color 0.2s, box-shadow 0.2s;
+            border-radius: 8px;
+            padding: 22px 24px;
+            transition: border-color 0.15s;
         }
 
         .project-card:hover {
-            border-color: rgba(99, 102, 241, 0.3);
-            box-shadow: 0 12px 28px -8px rgba(0, 0, 0, 0.4);
+            border-color: var(--border-hover);
         }
 
         .pc-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 22px;
+            margin-bottom: 18px;
         }
 
         .pc-title-area {
             display: flex;
             align-items: center;
-            gap: 16px;
+            gap: 12px;
         }
 
         .project-id-badge {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 12px;
+            font-family: var(--font-mono);
+            font-size: 11.5px;
             font-weight: 600;
-            background: rgba(255, 255, 255, 0.06);
+            background: var(--surface-elevated);
             border: 1px solid var(--border);
-            padding: 4px 10px;
-            border-radius: 8px;
-            color: var(--text-muted);
+            padding: 3px 8px;
+            border-radius: 4px;
+            color: #60a5fa;
         }
 
         .project-name {
-            font-family: 'Plus Jakarta Sans', sans-serif;
-            font-size: 19px;
-            font-weight: 700;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text);
         }
 
         .project-created {
-            font-size: 12px;
-            color: var(--text-muted);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--text-dim);
+            display: block;
+            margin-top: 2px;
         }
 
         .pc-status-area {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
         }
 
         .badge {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 12px;
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-family: var(--font-mono);
+            font-size: 11px;
             font-weight: 600;
-            text-transform: capitalize;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
 
         .badge .dot {
@@ -1319,148 +1382,175 @@ HTML;
             border-radius: 50%;
         }
 
-        .status-active { background: var(--emerald-bg); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
-        .status-active .dot { background: #34d399; box-shadow: 0 0 6px #34d399; }
+        .status-active { background: var(--emerald-bg); color: #a7f3d0; border: 1px solid var(--emerald-border); }
+        .status-active .dot { background: #34d399; }
 
-        .status-restricted { background: var(--amber-bg); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
-        .status-restricted .dot { background: #fbbf24; box-shadow: 0 0 6px #fbbf24; }
+        .status-restricted { background: var(--amber-bg); color: #fde68a; border: 1px solid var(--amber-border); }
+        .status-restricted .dot { background: #fbbf24; }
 
-        .status-disabled { background: var(--rose-bg); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.3); }
-        .status-disabled .dot { background: #fb7185; box-shadow: 0 0 6px #fb7185; }
+        .status-disabled { background: var(--rose-bg); color: #fca5a5; border: 1px solid var(--rose-border); }
+        .status-disabled .dot { background: #f87171; }
 
         .select-status {
-            background: rgba(15, 23, 42, 0.8);
+            background: var(--surface-elevated);
             border: 1px solid var(--border);
-            color: var(--text-main);
-            padding: 5px 10px;
-            border-radius: 8px;
-            font-size: 12.5px;
-            font-family: inherit;
+            color: var(--text-muted);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: var(--font-sans);
             cursor: pointer;
             outline: none;
+            transition: border-color 0.15s;
         }
 
-        .select-status:focus { border-color: var(--primary); }
+        .select-status:focus { border-color: var(--border-focus); }
 
         /* Metrics */
         .pc-metrics {
-            margin-bottom: 20px;
+            margin-bottom: 16px;
         }
 
         .metric-box {
-            margin-bottom: 16px;
+            margin-bottom: 14px;
         }
 
         .metric-label {
             display: flex;
             justify-content: space-between;
-            font-size: 13px;
+            font-size: 12.5px;
             color: var(--text-muted);
-            margin-bottom: 8px;
+            margin-bottom: 6px;
+        }
+
+        .metric-val-mono {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--text);
         }
 
         .progress-bar {
-            height: 8px;
-            background: rgba(255, 255, 255, 0.06);
-            border-radius: 4px;
+            height: 6px;
+            background: #161b24;
+            border-radius: 3px;
             overflow: hidden;
         }
 
         .progress-fill {
             height: 100%;
-            background: linear-gradient(90deg, #4f46e5, #06b6d4);
-            border-radius: 4px;
+            background: var(--primary);
+            border-radius: 3px;
             transition: width 0.3s ease;
         }
 
         .metric-row {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            gap: 12px;
+            gap: 10px;
         }
 
         .metric-pill {
-            background: rgba(255, 255, 255, 0.025);
+            background: var(--surface-elevated);
             border: 1px solid var(--border-subtle);
-            border-radius: 10px;
-            padding: 10px 14px;
+            border-radius: 6px;
+            padding: 8px 12px;
             display: flex;
             flex-direction: column;
-            gap: 4px;
+            gap: 3px;
         }
 
-        .mp-label { font-size: 11.5px; color: var(--text-muted); }
-        .mp-val { font-size: 14px; font-weight: 600; }
-        .mp-val small { font-size: 12px; color: var(--text-muted); font-weight: normal; }
+        .mp-label {
+            font-family: var(--font-mono);
+            font-size: 10.5px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--text-dim);
+        }
+
+        .mp-val {
+            font-family: var(--font-mono);
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .mp-val small {
+            font-size: 11px;
+            color: var(--text-dim);
+            font-weight: normal;
+        }
 
         /* Actions */
         .pc-actions {
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding-top: 16px;
+            gap: 10px;
+            padding-top: 14px;
             border-top: 1px solid var(--border-subtle);
         }
 
         .btn-ghost {
             display: inline-flex;
             align-items: center;
-            gap: 8px;
-            background: rgba(255, 255, 255, 0.04);
+            gap: 6px;
+            background: var(--surface-elevated);
             border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 8px 14px;
-            color: var(--text-main);
-            font-size: 13px;
+            border-radius: 6px;
+            padding: 6px 12px;
+            color: var(--text);
+            font-size: 12.5px;
             font-weight: 500;
+            font-family: var(--font-sans);
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.15s;
         }
 
         .btn-ghost:hover {
-            background: rgba(255, 255, 255, 0.08);
-            border-color: rgba(255, 255, 255, 0.16);
+            background: var(--surface-hover);
+            border-color: var(--border-hover);
         }
 
-        .btn-ghost svg { width: 16px; height: 16px; color: var(--text-muted); }
+        .btn-ghost svg { color: var(--text-muted); }
 
         /* Keys panel */
         .keys-panel {
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 1px dashed var(--border);
-            animation: fadeIn 0.2s ease-out;
+            margin-top: 18px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-subtle);
         }
 
         .kp-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 14px;
+            margin-bottom: 12px;
         }
 
         .kp-header h4 {
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 600;
+            color: var(--text);
         }
 
         .btn-subtle {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            background: rgba(99, 102, 241, 0.12);
-            border: 1px solid rgba(99, 102, 241, 0.3);
-            color: #c7d2fe;
-            border-radius: 8px;
-            padding: 6px 12px;
-            font-size: 12.5px;
+            background: var(--surface-elevated);
+            border: 1px solid var(--border);
+            color: #60a5fa;
+            border-radius: 6px;
+            padding: 5px 10px;
+            font-size: 12px;
             font-weight: 600;
+            font-family: var(--font-sans);
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.15s;
         }
 
         .btn-subtle:hover {
-            background: rgba(99, 102, 241, 0.25);
+            background: var(--surface-hover);
+            border-color: var(--border-hover);
         }
 
         .table-responsive {
@@ -1470,66 +1560,81 @@ HTML;
         .keys-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 13px;
+            font-size: 12.5px;
         }
 
         .keys-table th {
             text-align: left;
-            color: var(--text-muted);
-            font-size: 11.5px;
+            color: var(--text-dim);
+            font-family: var(--font-mono);
+            font-size: 10.5px;
             font-weight: 600;
             text-transform: uppercase;
-            letter-spacing: 0.04em;
-            padding: 10px 14px;
+            letter-spacing: 0.05em;
+            padding: 8px 12px;
             border-bottom: 1px solid var(--border);
         }
 
         .keys-table td {
-            padding: 12px 14px;
+            padding: 10px 12px;
             border-bottom: 1px solid var(--border-subtle);
             vertical-align: middle;
         }
 
         .key-id {
-            font-family: 'JetBrains Mono', monospace;
-            color: var(--text-muted);
-            font-size: 12px;
+            font-family: var(--font-mono);
+            color: var(--text-dim);
+            font-size: 11.5px;
+        }
+
+        .key-name {
+            color: var(--text);
+            font-weight: 500;
         }
 
         .key-prefix {
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--font-mono);
             font-size: 12px;
-            background: rgba(0, 0, 0, 0.3);
+            background: #080c14;
             padding: 2px 6px;
             border-radius: 4px;
-            color: #7dd3fc;
+            border: 1px solid var(--border-subtle);
+            color: #38bdf8;
+        }
+
+        .key-date {
+            font-family: var(--font-mono);
+            font-size: 11.5px;
+            color: var(--text-dim);
         }
 
         .revoked-tag {
-            font-size: 11.5px;
+            font-family: var(--font-mono);
+            font-size: 11px;
             color: var(--rose);
         }
 
         .btn-revoke {
             background: var(--rose-bg);
-            border: 1px solid rgba(244, 63, 94, 0.3);
-            color: #fecdd3;
-            border-radius: 6px;
-            padding: 4px 10px;
-            font-size: 12px;
+            border: 1px solid var(--rose-border);
+            color: #fca5a5;
+            border-radius: 4px;
+            padding: 3px 8px;
+            font-size: 11.5px;
+            font-family: var(--font-sans);
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.15s;
         }
 
         .btn-revoke:hover {
-            background: rgba(244, 63, 94, 0.3);
+            background: #7f1d1d;
         }
 
         .empty-keys {
             text-align: center;
-            color: var(--text-muted);
-            padding: 24px !important;
-            font-style: italic;
+            color: var(--text-dim);
+            padding: 20px !important;
+            font-size: 12.5px;
         }
 
         .text-right { text-align: right; }
@@ -1539,7 +1644,6 @@ HTML;
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
             background: rgba(0, 0, 0, 0.75);
-            backdrop-filter: blur(8px);
             display: none;
             align-items: center;
             justify-content: center;
@@ -1550,105 +1654,114 @@ HTML;
         .modal.active { display: flex; }
 
         .modal-card {
-            background: #0f172a;
+            background: var(--surface);
             border: 1px solid var(--border);
-            border-radius: 20px;
+            border-radius: 8px;
             width: 100%;
-            max-width: 480px;
-            padding: 32px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
-            animation: fadeIn 0.25s ease-out;
+            max-width: 460px;
+            padding: 28px;
+            box-shadow: 0 20px 48px rgba(0, 0, 0, 0.6);
         }
 
         .modal-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 24px;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border);
         }
 
         .modal-header h3 {
-            font-family: 'Plus Jakarta Sans', sans-serif;
-            font-size: 18px;
-            font-weight: 700;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text);
         }
 
         .modal-close {
             background: none;
             border: none;
-            color: var(--text-muted);
-            font-size: 24px;
+            color: var(--text-dim);
+            font-size: 20px;
             cursor: pointer;
             line-height: 1;
         }
 
-        .modal-close:hover { color: white; }
+        .modal-close:hover { color: var(--text); }
 
         .form-row {
-            margin-bottom: 18px;
+            margin-bottom: 16px;
         }
 
         .form-row label {
             display: block;
-            font-size: 13px;
-            font-weight: 500;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
             color: var(--text-muted);
             margin-bottom: 6px;
         }
 
         .form-row input, .form-row select {
             width: 100%;
-            background: rgba(255, 255, 255, 0.05);
+            background: var(--surface-elevated);
             border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 11px 14px;
-            color: white;
-            font-size: 14px;
-            font-family: inherit;
+            border-radius: 6px;
+            padding: 9px 12px;
+            color: var(--text);
+            font-size: 13px;
+            font-family: var(--font-mono);
             outline: none;
-            transition: border-color 0.2s;
+            transition: border-color 0.15s;
         }
 
         .form-row input:focus, .form-row select:focus {
-            border-color: var(--primary);
+            border-color: var(--border-focus);
+            box-shadow: 0 0 0 1px var(--border-focus);
         }
 
         .form-hint {
-            font-size: 11.5px;
-            color: rgba(148, 163, 184, 0.7);
+            font-size: 11px;
+            color: var(--text-dim);
             margin-top: 4px;
         }
 
         .modal-footer {
             display: flex;
             justify-content: flex-end;
-            gap: 12px;
-            margin-top: 28px;
+            gap: 10px;
+            margin-top: 24px;
+            padding-top: 14px;
+            border-top: 1px solid var(--border);
         }
 
         .btn-cancel {
             background: none;
             border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 10px 18px;
+            border-radius: 6px;
+            padding: 8px 14px;
             color: var(--text-muted);
-            font-size: 13.5px;
+            font-size: 13px;
+            font-family: var(--font-sans);
             cursor: pointer;
+            transition: all 0.15s;
         }
 
-        .btn-cancel:hover { color: white; border-color: rgba(255, 255, 255, 0.2); }
+        .btn-cancel:hover { color: var(--text); border-color: var(--border-hover); }
 
         .empty-state {
-            background: var(--bg-card);
+            background: var(--surface);
             border: 1px dashed var(--border);
-            border-radius: 20px;
-            padding: 60px 24px;
+            border-radius: 8px;
+            padding: 48px 24px;
             text-align: center;
         }
 
-        .empty-state svg { width: 48px; height: 48px; stroke: var(--text-muted); margin-bottom: 16px; }
-        .empty-state h3 { font-size: 18px; margin-bottom: 6px; }
-        .empty-state p { font-size: 13.5px; color: var(--text-muted); }
+        .empty-state svg { width: 40px; height: 40px; stroke: var(--text-dim); margin-bottom: 12px; }
+        .empty-state h3 { font-size: 15px; margin-bottom: 4px; color: var(--text); }
+        .empty-state p { font-size: 13px; color: var(--text-dim); }
     </style>
 </head>
 <body>
@@ -1658,23 +1771,26 @@ HTML;
     <div class="container nav-inner">
         <div class="brand-area">
             <div class="brand-icon">
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
                 </svg>
             </div>
             <div class="brand-info">
-                <h1>FileVault Admin</h1>
-                <p>Management Control Plane</p>
+                <h1>FileVault</h1>
+                <span class="brand-env">CONTROL PLANE v1.0</span>
             </div>
         </div>
 
         <div class="nav-actions">
-            <div class="user-tag">
+            <div class="node-tag">
                 <span class="dot"></span>
-                <span>Logged in as <strong>{$adminUser}</strong></span>
+                <span>NODE: ONLINE</span>
+            </div>
+            <div class="user-tag">
+                <span>USER: <strong>{$adminUser}</strong></span>
             </div>
             <button class="btn-primary" onclick="openModal('createProjectModal')">
-                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
                 <span>New Project</span>
             </button>
             <a href="{$logoutUrl}" class="btn-logout">Logout</a>
@@ -1696,25 +1812,28 @@ HTML;
         <div class="stat-card">
             <div class="stat-label">Total Storage Used</div>
             <div class="stat-value">{$totalStorageFormatted}</div>
-            <div class="stat-sub">Across all projects</div>
+            <div class="stat-sub">Across all vaults</div>
         </div>
         <div class="stat-card">
-            <div class="stat-label">Stored Files</div>
+            <div class="stat-label">Stored Objects</div>
             <div class="stat-value">{$totalFilesCountFormatted}</div>
-            <div class="stat-sub">Active logical objects</div>
+            <div class="stat-sub">Active logical files</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">Active API Keys</div>
             <div class="stat-value">{$totalKeysCount}</div>
-            <div class="stat-sub">Authorized credentials</div>
+            <div class="stat-sub">Issued credentials</div>
         </div>
     </div>
 
     <!-- Projects Section -->
     <div class="section-header">
-        <h2>Registered Projects</h2>
+        <h2>
+            <span>Projects Directory</span>
+            <span class="count-badge">{$totalProjectsCount}</span>
+        </h2>
         <button class="btn-primary" onclick="openModal('createProjectModal')">
-            <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
             <span>Create Project</span>
         </button>
     </div>
@@ -1728,34 +1847,34 @@ HTML;
 <div class="modal" id="createProjectModal" onclick="closeOnBackdrop(event, this)">
     <div class="modal-card">
         <div class="modal-header">
-            <h3>Create New Project</h3>
+            <h3>Create Project</h3>
             <button class="modal-close" onclick="closeModal('createProjectModal')">&times;</button>
         </div>
         <form method="POST" action="{$createProjectAction}">
             <input type="hidden" name="csrf_token" value="{$csrfToken}">
 
             <div class="form-row">
-                <label for="new_proj_name">Project Name</label>
+                <label for="new_proj_name">Project Identifier</label>
                 <input type="text" id="new_proj_name" name="name" required placeholder="e.g. mobile-app-production">
-                <div class="form-hint">Unique identifier for this project bucket.</div>
+                <div class="form-hint">Unique project name and storage partition.</div>
             </div>
 
             <div class="form-row">
                 <label for="new_proj_storage">Storage Quota</label>
                 <input type="text" id="new_proj_storage" name="max_storage" value="1G" placeholder="e.g. 500M, 1G, 10G">
-                <div class="form-hint">Maximum cumulative bytes allowed (0 for unlimited).</div>
+                <div class="form-hint">Cumulative bytes allowed (0 for unlimited).</div>
             </div>
 
             <div class="form-row">
-                <label for="new_proj_file_size">Max Single File Size</label>
+                <label for="new_proj_file_size">Max Single Payload</label>
                 <input type="text" id="new_proj_file_size" name="max_file_size" value="50M" placeholder="e.g. 20M, 100M">
-                <div class="form-hint">Maximum size per individual uploaded file.</div>
+                <div class="form-hint">Maximum upload size per single file.</div>
             </div>
 
             <div class="form-row">
-                <label for="new_proj_files">Max File Count</label>
+                <label for="new_proj_files">Max Object Count</label>
                 <input type="number" id="new_proj_files" name="max_file_count" value="1000" min="0" placeholder="1000">
-                <div class="form-hint">Max logical active files permitted (0 for unlimited).</div>
+                <div class="form-hint">Maximum active files allowed (0 for unlimited).</div>
             </div>
 
             <div class="modal-footer">
@@ -1782,12 +1901,12 @@ HTML;
             </div>
 
             <div class="form-row">
-                <label for="eq_file_size">Max File Size</label>
+                <label for="eq_file_size">Max Single File Size</label>
                 <input type="text" id="eq_file_size" name="max_file_size" required placeholder="e.g. 50M">
             </div>
 
             <div class="form-row">
-                <label for="eq_files">Max File Count</label>
+                <label for="eq_files">Max Object Count</label>
                 <input type="number" id="eq_files" name="max_file_count" required min="0">
             </div>
 
@@ -1811,13 +1930,13 @@ HTML;
 
             <div class="form-row">
                 <label>Target Project</label>
-                <input type="text" id="ck_project_name" disabled style="opacity: 0.7;">
+                <input type="text" id="ck_project_name" disabled style="opacity: 0.6;">
             </div>
 
             <div class="form-row">
                 <label for="ck_key_name">Key Description / Name</label>
                 <input type="text" id="ck_key_name" name="name" required placeholder="e.g. Backend Production Worker">
-                <div class="form-hint">Used to identify where this key is deployed.</div>
+                <div class="form-hint">Used to identify the consuming application or service.</div>
             </div>
 
             <div class="modal-footer">
@@ -1873,7 +1992,7 @@ HTML;
         navigator.clipboard.writeText(text).then(() => {
             const originalHtml = btn.innerHTML;
             btn.innerHTML = '<span>Copied!</span>';
-            setTimeout(() => { btn.innerHTML = originalHtml; }, 2500);
+            setTimeout(() => { btn.innerHTML = originalHtml; }, 2000);
         });
     }
 </script>
