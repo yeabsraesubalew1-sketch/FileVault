@@ -15,5 +15,7 @@ final readonly class Config
         public string $appUrl,
         public DatabaseConfig $database,
         public StorageConfig $storage,
+        public string $adminPassword = 'admin',
+        public string $adminUsername = 'admin',
     ) {}
 }

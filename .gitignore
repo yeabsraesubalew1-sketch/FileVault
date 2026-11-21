@@ -1,4 +1,11 @@
 /vendor/
 /.env
+/client/.env
 /phpunit.xml
 /phpunit.result.cache
+/.phpunit.cache/
+/scratch/
+/storage/projects/*
+!/storage/projects/.gitkeep
+/storage/.tmp/*
+!/storage/.tmp/.gitkeep

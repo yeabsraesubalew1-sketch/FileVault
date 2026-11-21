@@ -36,7 +36,9 @@ final class ConfigLoader
             ),
             storage: new StorageConfig(
                 storageRoot: self::getString('STORAGE_ROOT')
-            )
+            ),
+            adminPassword: self::getString('ADMIN_PASSWORD', 'admin123'),
+            adminUsername: self::getString('ADMIN_USERNAME', 'admin')
         );
     }
 

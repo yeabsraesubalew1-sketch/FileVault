@@ -81,25 +81,31 @@ final class LocalFilesystemStorage implements StorageBackend
         // Physical relocation uses a same-filesystem link/unlink sequence that prevents destination overwrite. 
         // The sequence is not atomic; M06 must not report success when the source unlink phase fails.
         // For initial publication, a failure to unlink the temporary source is ignored since the object is successfully published.
+        if (file_exists($finalPath)) {
+            @unlink($tempPath);
+            throw new StorageConflictException('Storage conflict: object already exists at destination');
+        }
+
         if (@link($tempPath, $finalPath)) {
             @unlink($tempPath);
+        } elseif (@rename($tempPath, $finalPath)) {
+            // Renamed successfully
         } else {
             @unlink($tempPath);
-            if (file_exists($finalPath)) {
-                throw new StorageConflictException('Storage conflict: object already exists at destination');
-            }
             throw new StorageOperationException('Failed to atomically publish stored object');
         }
 
         return new StoredObject($storageKey, $sizeBytes);
     }
 
-    public function openRead(int $projectId, string $storageKey)
+    public function openRead(int $projectId, string $storageKey, bool $fromTrash = false)
     {
         $this->validateProjectId($projectId);
         $this->validateStorageKey($storageKey);
         
-        $path = $this->getActivePath($projectId, $storageKey);
+        $path = $fromTrash
+            ? $this->getTrashPath($projectId, $storageKey)
+            : $this->getActivePath($projectId, $storageKey);
         
         $this->ensureValidFile($path);
         
@@ -121,15 +127,18 @@ final class LocalFilesystemStorage implements StorageBackend
         
         $this->ensureValidFile($activePath);
         $this->ensureDirectoryExists(dirname($trashPath));
+
+        if (file_exists($trashPath)) {
+            throw new StorageConflictException('Object already exists in trash');
+        }
         
         if (@link($activePath, $trashPath)) {
             if (!@unlink($activePath)) {
                 throw new StorageOperationException('Failed to complete move to trash (unlink failed)');
             }
+        } elseif (@rename($activePath, $trashPath)) {
+            // Renamed successfully
         } else {
-            if (file_exists($trashPath)) {
-                throw new StorageConflictException('Object already exists in trash');
-            }
             throw new StorageOperationException('Failed to move object to trash');
         }
     }
@@ -144,16 +153,20 @@ final class LocalFilesystemStorage implements StorageBackend
         
         $this->ensureValidFile($trashPath);
         $this->ensureDirectoryExists(dirname($activePath));
+
+        if (file_exists($activePath)) {
+            throw new StorageConflictException('Storage conflict: object already exists at destination');
+        }
         
         if (@link($trashPath, $activePath)) {
             if (!@unlink($trashPath)) {
                 throw new StorageOperationException('Failed to complete restore (unlink failed)');
             }
+        } elseif (@rename($trashPath, $activePath)) {
+            // Renamed successfully
         } else {
-            if (file_exists($activePath)) {
-                throw new StorageConflictException('Storage conflict: object already exists at destination');
-            }
-            throw new StorageOperationException('Failed to restore object');
+            $err = error_get_last();
+            throw new StorageOperationException('Failed to restore object: ' . ($err['message'] ?? 'unknown error'));
         }
     }
 

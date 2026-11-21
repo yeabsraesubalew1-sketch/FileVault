@@ -1,0 +1,19 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Deny access to sensitive files and directories
+    RewriteRule ^\.env - [F,L,NC]
+    RewriteRule ^storage/ - [F,L,NC]
+    RewriteRule ^src/ - [F,L,NC]
+    RewriteRule ^config/ - [F,L,NC]
+    RewriteRule ^database/ - [F,L,NC]
+    RewriteRule ^vendor/ - [F,L,NC]
+    RewriteRule ^tests/ - [F,L,NC]
+
+    # Exclude client demo folder from public rewrite
+    RewriteRule ^client(/.*)?$ - [L]
+
+    # Route all incoming requests into the public/ directory
+    RewriteRule ^$ public/ [L]
+    RewriteRule (.*) public/$1 [L]
+</IfModule>

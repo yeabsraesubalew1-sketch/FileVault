@@ -2,7 +2,8 @@
 
 declare(strict_types=1);
 
-use FileVault\Foundation\Bootstrap\App;
+use FileVault\Http\Kernel;
+use FileVault\Http\Request;
 
 $basePath = dirname(__DIR__);
 
@@ -21,27 +22,34 @@ if (!file_exists($basePath . '/vendor/autoload.php')) {
 require_once $basePath . '/vendor/autoload.php';
 
 try {
-    // Bootstrap the Foundation
-    $app = App::bootstrap($basePath);
-
-    // The HTTP/API module (M02) will eventually take over from here.
-    // For now, this confirms the bootstrap was successful.
-    if (php_sapi_name() !== 'cli') {
-        header('Content-Type: application/json');
-        echo json_encode([
-            'status' => 'ok',
-            'message' => 'FileVault Core Foundation initialized successfully.'
-        ]);
-    }
+    $kernel = Kernel::create($basePath);
+    $request = Request::fromGlobals();
+    $response = $kernel->handle($request);
+    $response->send();
 } catch (\Throwable $e) {
-    error_log('FileVault Bootstrap Failure: ' . $e->getMessage());
+    error_log('FileVault Unhandled Failure: ' . $e->getMessage());
 
-    if (php_sapi_name() !== 'cli' && !headers_sent()) {
+    if (php_sapi_name() === 'cli') {
+        fwrite(STDERR, "FileVault Bootstrap Failure: " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine() . "\n");
+        exit(1);
+    }
+
+    if (!headers_sent()) {
         http_response_code(500);
-        header('Content-Type: text/plain');
-        echo "Internal Server Error\n";
-    } else if (php_sapi_name() === 'cli') {
-        echo "Bootstrap Error: " . $e->getMessage() . "\n";
+        $isDebug = (getenv('APP_DEBUG') === 'true' || ($_ENV['APP_DEBUG'] ?? '') === 'true' || (isset($_GET['debug']) && $_GET['debug'] === '1'));
+        echo json_encode([
+            'error' => [
+                'code' => 'internal_error',
+                'message' => 'An internal server error occurred.',
+                'request_id' => 'req_bootstrap_failure',
+                'details' => $isDebug ? [
+                    'exception' => get_class($e),
+                    'message' => $e->getMessage(),
+                    'file' => $e->getFile() . ':' . $e->getLine(),
+                ] : null,
+                'hint' => $isDebug ? null : 'Append ?debug=1 to the URL or set APP_DEBUG=true in .env to view diagnostic details.',
+            ],
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
     exit(1);

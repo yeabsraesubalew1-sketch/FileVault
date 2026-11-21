@@ -12,5 +12,10 @@ interface ProjectRepository
     
     public function findByName(string $name): ?Project;
     
+    /**
+     * @return list<Project>
+     */
+    public function findAll(int $limit = 50, int $offset = 0): array;
+
     public function save(Project $project): Project;
 }
